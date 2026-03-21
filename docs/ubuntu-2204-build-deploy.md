@@ -168,7 +168,7 @@ export IMAGE_TAG=$(git rev-parse --short HEAD)
 
 GOFLAGS='-ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version='"${IMAGE_TAG}" \
 KO_DOCKER_REPO="${AZURE_ACR_REPO}" \
-ko publish -B --sbom none -t "${IMAGE_TAG}" ./cmd/controller
+PATH="$HOME/go/bin:$PATH" ko publish -B --sbom none -t "${IMAGE_TAG}" ./cmd/controller
 ```
 
 这条命令会输出最终镜像引用，格式通常类似：
@@ -271,6 +271,47 @@ controller:
 ## 七、准备部署所需的基础 values
 
 这个仓库推荐使用 `configure-values.sh` 基于 AKS 集群动态生成基础 values。
+
+### 0. 先配置 Workload Identity（已有集群场景）
+
+如果你的 AKS 集群是已有集群，建议先显式完成 Karpenter 的 Workload Identity 绑定，再生成 values。
+
+仓库已提供脚本：
+
+```bash
+bash ./hack/deploy/configure-workload-identity.sh \
+  "${CLUSTER_NAME}" \
+  "${RG}" \
+  "${KARPENTER_NAMESPACE}" \
+  karpenter-sa \
+  karpentermsi \
+  KARPENTER_FID
+```
+
+脚本会完成以下动作：
+
+1. 校验 AKS 是否开启 OIDC issuer 与 Workload Identity
+2. 创建（或复用）用户分配托管身份 `karpentermsi`
+3. 创建（或复用）`federated credential`
+4. 创建并注解 ServiceAccount（`azure.workload.identity/client-id`）
+5. 为节点资源组授予 Karpenter 所需角色
+
+如果脚本提示集群未开启 Workload Identity，请先执行：
+
+```bash
+az aks update \
+  --name "${CLUSTER_NAME}" \
+  --resource-group "${RG}" \
+  --enable-oidc-issuer \
+  --enable-workload-identity
+```
+
+最小校验命令：
+
+```bash
+kubectl get sa karpenter-sa -n "${KARPENTER_NAMESPACE}" -o yaml | grep -E "azure.workload.identity/(client-id|tenant-id)"
+az identity federated-credential list --identity-name karpentermsi --resource-group "${RG}" -o table
+```
 
 如果你已经有 AKS 集群，可以这样做：
 
