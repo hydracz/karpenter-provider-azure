@@ -52,14 +52,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	if nodeClaim == nil {
 		return nil, fmt.Errorf("NodeClaim is not set")
 	}
-	if capacityType == karpv1.CapacityTypeSpot {
-		spotMaxPrice, err := parseSpotMaxPriceAnnotation(nodeClaim.Annotations)
-		if err != nil {
-			return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: %w", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, err)
-		}
-		if spotMaxPrice != nil {
-			return nil, fmt.Errorf("annotation %q is not supported in provision mode %q", v1beta1.AnnotationSpotMaxPrice, consts.ProvisionModeAKSMachineAPI)
-		}
+	if err := validateSpotMaxPriceAnnotationForAKSMachine(nodeClaim, capacityType); err != nil {
+		return nil, err
 	}
 
 	// NodeImageVersion
@@ -158,6 +152,22 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Tags: tags,
 		},
 	}, nil
+}
+
+func validateSpotMaxPriceAnnotationForAKSMachine(nodeClaim *karpv1.NodeClaim, capacityType string) error {
+	if capacityType != karpv1.CapacityTypeSpot {
+		return nil
+	}
+
+	spotMaxPrice, err := parseSpotMaxPriceAnnotation(nodeClaim.Annotations)
+	if err != nil {
+		return fmt.Errorf("invalid %q annotation on NodeClaim %q: %w", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, err)
+	}
+	if spotMaxPrice != nil {
+		return fmt.Errorf("annotation %q is not supported in provision mode %q", v1beta1.AnnotationSpotMaxPrice, consts.ProvisionModeAKSMachineAPI)
+	}
+
+	return nil
 }
 
 func configureGPUProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.GPUProfile {

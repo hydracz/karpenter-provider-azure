@@ -111,7 +111,7 @@ type AKSNodeClassSpec struct {
 	// installGPUDrivers controls whether AKS should automatically install GPU drivers on provisioned GPU nodes.
 	// Set this to false when using GPU Operator or another out-of-band driver installation mechanism.
 	// If not specified, defaults to true.
-	// +kubebuilder:default=true
+	// +default=true
 	// +optional
 	InstallGPUDrivers *bool `json:"installGPUDrivers,omitempty"`
 }
