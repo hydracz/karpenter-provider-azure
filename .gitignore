@@ -23,5 +23,9 @@ go.work.sum
 # Project Specific
 *.csv
 
+# Local build/image artifacts
+/dist/
+/controller
+
 # generated deployment config
 karpenter-values.yaml

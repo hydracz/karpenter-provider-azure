@@ -20,7 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -539,6 +542,7 @@ type createVMOptions struct {
 	NicReference        string
 	Zone                string
 	CapacityType        string
+	SpotMaxPrice        *float64
 	Location            string
 	SSHPublicKey        string
 	LinuxAdminUsername  string
@@ -611,7 +615,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
 	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
-	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
+	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType, opts.SpotMaxPrice)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
@@ -658,14 +662,45 @@ func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageI
 	}
 }
 
-// setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
-func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
+// setVMPropertiesBillingProfile sets MaxPrice for Spot with a default of -1.
+func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string, spotMaxPrice *float64) {
 	if capacityType == karpv1.CapacityTypeSpot {
+		maxPrice := float64(-1)
+		if spotMaxPrice != nil {
+			maxPrice = *spotMaxPrice
+		}
 		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: lo.ToPtr(float64(-1)),
+			MaxPrice: lo.ToPtr(maxPrice),
 		}
 	}
+}
+
+func parseSpotMaxPriceAnnotation(annotations map[string]string) (*float64, error) {
+	if len(annotations) == 0 {
+		return nil, nil
+	}
+	raw, ok := annotations[v1beta1.AnnotationSpotMaxPrice]
+	if !ok {
+		return nil, nil
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("annotation value must not be empty")
+	}
+
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("annotation value %q must be a valid float", raw)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil, fmt.Errorf("annotation value %q must be a finite number", raw)
+	}
+	if value < 0 && value != -1 {
+		return nil, fmt.Errorf("annotation value must be -1 or >= 0, got %v", value)
+	}
+
+	return lo.ToPtr(value), nil
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
@@ -755,6 +790,14 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
+	var spotMaxPrice *float64
+	if capacityType == karpv1.CapacityTypeSpot {
+		spotMaxPrice, err = parseSpotMaxPriceAnnotation(nodeClaim.Annotations)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: %w", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, err)
+		}
+	}
+
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
@@ -804,6 +847,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		NicReference:        nicReference,
 		Zone:                zone,
 		CapacityType:        capacityType,
+		SpotMaxPrice:        spotMaxPrice,
 		Location:            p.location,
 		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
 		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,

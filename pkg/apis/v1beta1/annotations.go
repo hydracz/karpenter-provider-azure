@@ -19,4 +19,5 @@ package v1beta1
 // Annotations
 var (
 	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
+	AnnotationSpotMaxPrice      = Group + "/spot-max-price"
 )

@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
@@ -50,6 +51,15 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 	if nodeClaim == nil {
 		return nil, fmt.Errorf("NodeClaim is not set")
+	}
+	if capacityType == karpv1.CapacityTypeSpot {
+		spotMaxPrice, err := parseSpotMaxPriceAnnotation(nodeClaim.Annotations)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: %w", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, err)
+		}
+		if spotMaxPrice != nil {
+			return nil, fmt.Errorf("annotation %q is not supported in provision mode %q", v1beta1.AnnotationSpotMaxPrice, consts.ProvisionModeAKSMachineAPI)
+		}
 	}
 
 	// NodeImageVersion

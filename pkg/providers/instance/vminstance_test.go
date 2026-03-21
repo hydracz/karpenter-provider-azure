@@ -19,9 +19,11 @@ package instance
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
@@ -103,4 +105,115 @@ func TestGetManagedExtensionNames(t *testing.T) {
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestParseSpotMaxPriceAnnotation(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    *float64
+		err         bool
+	}{
+		{
+			name:        "missing annotation",
+			annotations: map[string]string{},
+			expected:    nil,
+			err:         false,
+		},
+		{
+			name: "valid default -1",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "-1",
+			},
+			expected: lo.ToPtr(float64(-1)),
+			err:      false,
+		},
+		{
+			name: "valid custom",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "0.0321",
+			},
+			expected: lo.ToPtr(float64(0.0321)),
+			err:      false,
+		},
+		{
+			name: "empty value",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "   ",
+			},
+			err: true,
+		},
+		{
+			name: "invalid negative value",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "-0.1",
+			},
+			err: true,
+		},
+		{
+			name: "invalid non float",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "abc",
+			},
+			err: true,
+		},
+		{
+			name: "invalid NaN",
+			annotations: map[string]string{
+				v1beta1.AnnotationSpotMaxPrice: "NaN",
+			},
+			err: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			value, err := parseSpotMaxPriceAnnotation(tt.annotations)
+			if tt.err {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(value).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestSetVMPropertiesBillingProfile(t *testing.T) {
+	t.Run("spot defaults to -1", func(t *testing.T) {
+		g := NewWithT(t)
+		props := &armcompute.VirtualMachineProperties{}
+
+		setVMPropertiesBillingProfile(props, "spot", nil)
+
+		g.Expect(props.EvictionPolicy).ToNot(BeNil())
+		g.Expect(*props.EvictionPolicy).To(Equal(armcompute.VirtualMachineEvictionPolicyTypesDelete))
+		g.Expect(props.BillingProfile).ToNot(BeNil())
+		g.Expect(props.BillingProfile.MaxPrice).ToNot(BeNil())
+		g.Expect(*props.BillingProfile.MaxPrice).To(Equal(float64(-1)))
+	})
+
+	t.Run("spot uses annotation value", func(t *testing.T) {
+		g := NewWithT(t)
+		props := &armcompute.VirtualMachineProperties{}
+		maxPrice := 0.015
+
+		setVMPropertiesBillingProfile(props, "spot", &maxPrice)
+
+		g.Expect(props.BillingProfile).ToNot(BeNil())
+		g.Expect(props.BillingProfile.MaxPrice).ToNot(BeNil())
+		g.Expect(*props.BillingProfile.MaxPrice).To(Equal(maxPrice))
+	})
+
+	t.Run("on-demand keeps billing profile unset", func(t *testing.T) {
+		g := NewWithT(t)
+		props := &armcompute.VirtualMachineProperties{}
+		maxPrice := 0.1
+
+		setVMPropertiesBillingProfile(props, "on-demand", &maxPrice)
+
+		g.Expect(props.BillingProfile).To(BeNil())
+		g.Expect(props.EvictionPolicy).To(BeNil())
+	})
 }
