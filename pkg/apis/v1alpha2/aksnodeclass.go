@@ -108,6 +108,12 @@ type AKSNodeClassSpec struct {
 	// Artifact streaming allows container images to be streamed on demand to nodes rather than fully downloaded before starting.
 	// +optional
 	ArtifactStreaming *ArtifactStreaming `json:"artifactStreaming,omitempty"`
+	// installGPUDrivers controls whether AKS should automatically install GPU drivers on provisioned GPU nodes.
+	// Set this to false when using GPU Operator or another out-of-band driver installation mechanism.
+	// If not specified, defaults to true.
+	// +kubebuilder:default=true
+	// +optional
+	InstallGPUDrivers *bool `json:"installGPUDrivers,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -407,7 +413,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+const AKSNodeClassHashVersion = "v4"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
@@ -432,6 +438,15 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// IsInstallGPUDrivers returns whether AKS should install GPU drivers automatically.
+// If not explicitly specified, it defaults to true.
+func (in *AKSNodeClass) IsInstallGPUDrivers() bool {
+	if in.Spec.InstallGPUDrivers != nil {
+		return *in.Spec.InstallGPUDrivers
+	}
+	return true
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

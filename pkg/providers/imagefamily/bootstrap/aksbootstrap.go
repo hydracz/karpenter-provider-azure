@@ -302,7 +302,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	if a.GPUNode {
 		nbv.GPUNode = true
-		nbv.ConfigGPUDriverIfNeeded = true
+		nbv.ConfigGPUDriverIfNeeded = a.InstallGPUDrivers
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUDriverType = a.GPUDriverType
 		nbv.GPUImageSHA = a.GPUImageSHA

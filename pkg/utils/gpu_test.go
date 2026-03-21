@@ -30,6 +30,7 @@ func TestGetAKSGPUImageSHA(t *testing.T) {
 		gpuDriverType string
 	}{
 		{"GRID Driver - NC Series v4", "standard_nc8ads_a10_v4", AKSGPUGridVersionSuffix, "grid"},
+		{"GRID Driver - RTX PRO 6000 BSE v6", "standard_nc128ds_xl_rtxpro6000bse_v6", AKSGPUGridVersionSuffix, "grid"},
 		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaVersionSuffix, "cuda"},
 		{"CUDA Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaVersionSuffix, "cuda"},
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", AKSGPUGridVersionSuffix, "grid"},
@@ -59,6 +60,7 @@ func TestGetGPUDriverVersion(t *testing.T) {
 		{"Unknown SKU", "unknown_sku", NvidiaCudaDriverVersion},
 		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaDriverVersion},
 		{"GRID Driver - A10", "standard_nc8ads_a10_v4", NvidiaGridDriverVersion},
+		{"GRID Driver - RTX PRO 6000 BSE v6", "standard_nc128ds_xl_rtxpro6000bse_v6", NvidiaGridDriverVersion},
 	}
 
 	for _, test := range tests {
@@ -82,6 +84,7 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 		{"Valid SKU - NV Series", "standard_nv6", true},
 		{"Invalid SKU", "standard_d2_v2", false},
 		{"Valid SKU - T4 Series", "standard_nc4as_t4_v3", true},
+		{"Valid SKU - RTX PRO 6000 BSE v6", "standard_nc128ds_xl_rtxpro6000bse_v6", true},
 		{"Empty SKU", "", false},
 	}
 

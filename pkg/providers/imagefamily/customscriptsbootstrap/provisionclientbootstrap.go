@@ -65,6 +65,7 @@ type ProvisionClientBootstrap struct {
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
 	ArtifactStreaming              *v1beta1.ArtifactStreaming
+	InstallGPUDrivers              bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -194,7 +195,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
 		provisionProfile.GpuProfile = &models.GPUProfile{
 			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
-			InstallGPUDriver: lo.ToPtr(true),
+			InstallGPUDriver: lo.ToPtr(p.InstallGPUDrivers),
 		}
 	}
 

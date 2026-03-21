@@ -42,6 +42,26 @@ standard_nc80adis_h100_v5:
   gpu: nvidia
   os: ["ubuntu", "windows", "azurelinux3"]
 
+#  StandardNCRTXPRO6000BSEv6Family:
+standard_nc128ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+standard_nc256ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+standard_nc320ds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+standard_nc128lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+standard_nc256lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+standard_nc320lds_xl_rtxpro6000bse_v6:
+  gpu: nvidia
+  os: ["ubuntu", "windows"]
+
 #  StandardNDASv4_A100Family:
 standard_nd96asr_v4:
   gpu: nvidia

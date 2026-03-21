@@ -87,6 +87,13 @@ spec:
                 - Ubuntu2404
                 - AzureLinux
                 type: string
+              installGPUDrivers:
+                default: true
+                description: |-
+                  installGPUDrivers controls whether AKS should automatically install GPU drivers on provisioned GPU nodes.
+                  Set this to false when using GPU Operator or another out-of-band driver installation mechanism.
+                  If not specified, defaults to true.
+                type: boolean
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -657,6 +664,13 @@ spec:
                 - Ubuntu2404
                 - AzureLinux
                 type: string
+              installGPUDrivers:
+                default: true
+                description: |-
+                  installGPUDrivers controls whether AKS should automatically install GPU drivers on provisioned GPU nodes.
+                  Set this to false when using GPU Operator or another out-of-band driver installation mechanism.
+                  If not specified, defaults to true.
+                type: boolean
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.

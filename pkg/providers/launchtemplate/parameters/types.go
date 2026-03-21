@@ -31,6 +31,7 @@ type StaticParameters struct {
 	CABundle                       *string
 	Arch                           string
 	GPUNode                        bool
+	InstallGPUDrivers              bool
 	GPUDriverVersion               string
 	GPUDriverType                  string
 	GPUImageSHA                    string

@@ -18,10 +18,12 @@ package instance
 
 import (
 	"strings"
+	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -31,6 +33,39 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+func TestConfigureGPUProfileUnit(t *testing.T) {
+	gpuInstanceType := &corecloudprovider.InstanceType{
+		Name: "Standard_NC128ds_xl_RTXPRO6000BSE_v6",
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("128"),
+			v1.ResourceMemory: resource.MustParse("512Gi"),
+			"nvidia.com/gpu":  resource.MustParse("1"),
+		},
+	}
+
+	t.Run("defaults to installing drivers", func(t *testing.T) {
+		g := NewWithT(t)
+		nodeClass := &v1beta1.AKSNodeClass{}
+
+		profile := configureGPUProfile(nodeClass, gpuInstanceType)
+		g.Expect(profile).ToNot(BeNil())
+		g.Expect(lo.FromPtr(profile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+	})
+
+	t.Run("can disable automatic driver installation", func(t *testing.T) {
+		g := NewWithT(t)
+		nodeClass := &v1beta1.AKSNodeClass{
+			Spec: v1beta1.AKSNodeClassSpec{
+				InstallGPUDrivers: lo.ToPtr(false),
+			},
+		}
+
+		profile := configureGPUProfile(nodeClass, gpuInstanceType)
+		g.Expect(profile).ToNot(BeNil())
+		g.Expect(lo.FromPtr(profile.Driver)).To(Equal(armcontainerservice.GPUDriverNone))
+	})
+}
 
 var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	var nodeClass *v1beta1.AKSNodeClass
@@ -195,6 +230,39 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
+		})
+	})
+
+	Context("configureGPUProfile", func() {
+		It("should default to installing drivers for GPU instance types", func() {
+			gpuInstanceType := &corecloudprovider.InstanceType{
+				Name: "Standard_NC128ds_xl_RTXPRO6000BSE_v6",
+				Capacity: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("128"),
+					v1.ResourceMemory: resource.MustParse("512Gi"),
+					"nvidia.com/gpu":  resource.MustParse("1"),
+				},
+			}
+
+			profile := configureGPUProfile(nodeClass, gpuInstanceType)
+			Expect(profile).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.Driver)).To(Equal(armcontainerservice.GPUDriverInstall))
+		})
+
+		It("should allow automatic GPU driver installation to be disabled", func() {
+			nodeClass.Spec.InstallGPUDrivers = lo.ToPtr(false)
+			gpuInstanceType := &corecloudprovider.InstanceType{
+				Name: "Standard_NC128ds_xl_RTXPRO6000BSE_v6",
+				Capacity: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("128"),
+					v1.ResourceMemory: resource.MustParse("512Gi"),
+					"nvidia.com/gpu":  resource.MustParse("1"),
+				},
+			}
+
+			profile := configureGPUProfile(nodeClass, gpuInstanceType)
+			Expect(profile).ToNot(BeNil())
+			Expect(lo.FromPtr(profile.Driver)).To(Equal(armcontainerservice.GPUDriverNone))
 		})
 	})
 

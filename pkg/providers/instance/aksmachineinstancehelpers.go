@@ -64,7 +64,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// GPUProfile
-	gpuProfile := configureGPUProfile(instanceType)
+	gpuProfile := configureGPUProfile(nodeClass, instanceType)
 
 	// OrchestratorVersion (i.e., Kubernetes version)
 	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
@@ -150,11 +150,15 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}, nil
 }
 
-func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armcontainerservice.GPUProfile {
+func configureGPUProfile(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) *armcontainerservice.GPUProfile {
 	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
 	if utils.IsNvidiaEnabledSKU(instanceType.Name) {
+		driver := armcontainerservice.GPUDriverInstall
+		if !nodeClass.IsInstallGPUDrivers() {
+			driver = armcontainerservice.GPUDriverNone
+		}
 		return &armcontainerservice.GPUProfile{
-			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
+			Driver: lo.ToPtr(driver),
 			// DriverType: nil,
 		}
 	}

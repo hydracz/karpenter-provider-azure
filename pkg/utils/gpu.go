@@ -138,13 +138,19 @@ see https://github.com/Azure/azhpc-extensions/blob/daaefd78df6f27012caf30f3b54c3
 */
 //nolint:gochecknoglobals
 var ConvergedGPUDriverSizes = map[string]bool{
-	"standard_nv6ads_a10_v5":   true,
-	"standard_nv12ads_a10_v5":  true,
-	"standard_nv18ads_a10_v5":  true,
-	"standard_nv36ads_a10_v5":  true,
-	"standard_nv72ads_a10_v5":  true,
-	"standard_nv36adms_a10_v5": true,
-	"standard_nc8ads_a10_v4":   true,
-	"standard_nc16ads_a10_v4":  true,
-	"standard_nc32ads_a10_v4":  true,
+	"standard_nv6ads_a10_v5":                true,
+	"standard_nv12ads_a10_v5":               true,
+	"standard_nv18ads_a10_v5":               true,
+	"standard_nv36ads_a10_v5":               true,
+	"standard_nv72ads_a10_v5":               true,
+	"standard_nv36adms_a10_v5":              true,
+	"standard_nc8ads_a10_v4":                true,
+	"standard_nc16ads_a10_v4":               true,
+	"standard_nc32ads_a10_v4":               true,
+	"standard_nc128ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc256ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc320ds_xl_rtxpro6000bse_v6":  true,
+	"standard_nc128lds_xl_rtxpro6000bse_v6": true,
+	"standard_nc256lds_xl_rtxpro6000bse_v6": true,
+	"standard_nc320lds_xl_rtxpro6000bse_v6": true,
 }

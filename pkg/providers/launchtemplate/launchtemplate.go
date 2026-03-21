@@ -162,6 +162,7 @@ func (p *Provider) getStaticParameters(
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
 		GPUNode:                        utils.IsNvidiaEnabledSKU(instanceType.Name),
+		InstallGPUDrivers:              nodeClass.IsInstallGPUDrivers(),
 		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
 		GPUDriverType:                  utils.GetGPUDriverType(instanceType.Name),
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),

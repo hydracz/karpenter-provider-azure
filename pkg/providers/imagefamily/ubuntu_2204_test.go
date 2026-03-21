@@ -17,6 +17,7 @@ limitations under the License.
 package imagefamily_test
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -44,6 +45,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 			ClusterResourceGroup:           "test-cluster-rg",
 			KubeletClientTLSBootstrapToken: "test-token",
 			KubernetesVersion:              "1.31.0",
+			InstallGPUDrivers:              false,
 		},
 	}
 
@@ -101,6 +103,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.ClusterResourceGroup).To(Equal("test-cluster-rg"))
 	g.Expect(provisionBootstrapper.KubeletClientTLSBootstrapToken).To(Equal("test-token"))
 	g.Expect(provisionBootstrapper.KubernetesVersion).To(Equal("1.31.0"))
+	g.Expect(provisionBootstrapper.InstallGPUDrivers).To(BeFalse())
 	g.Expect(provisionBootstrapper.ImageDistro).To(Equal(imageDistro))
 	g.Expect(provisionBootstrapper.InstanceType).To(Equal(instanceType))
 	g.Expect(provisionBootstrapper.StorageProfile).To(Equal(storageProfile))
@@ -108,6 +111,36 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204), "ImageFamily field must be set to prevent unsupported image family errors")
 	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
 	g.Expect(provisionBootstrapper.LocalDNSProfile).To(Equal(localDNS), "LocalDNSProfile field must match the input parameter")
+}
+
+func TestUbuntu2204_ScriptlessCustomData_DisablesGPUDriverInstall(t *testing.T) {
+	g := NewWithT(t)
+	ubuntu := imagefamily.Ubuntu2204{
+		Options: &parameters.StaticParameters{
+			ClusterName:       "test-cluster",
+			ClusterEndpoint:   "https://example.com",
+			CABundle:          lo.ToPtr("test-ca"),
+			SubnetID:          "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+			GPUNode:           true,
+			InstallGPUDrivers: false,
+			GPUDriverVersion:  "special-driver",
+			GPUDriverType:     "grid",
+			GPUImageSHA:       "sha",
+			KubernetesVersion: "1.31.0",
+		},
+	}
+
+	bootstrapper := ubuntu.ScriptlessCustomData(nil, nil, nil, lo.ToPtr("test-ca"), nil)
+	aksBootstrapper, ok := bootstrapper.(bootstrap.AKS)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(aksBootstrapper.Options.GPUNode).To(BeTrue())
+	g.Expect(aksBootstrapper.Options.InstallGPUDrivers).To(BeFalse())
+
+	script, err := aksBootstrapper.Script()
+	g.Expect(err).ToNot(HaveOccurred())
+	decodedScript, err := base64.StdEncoding.DecodeString(script)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(string(decodedScript)).To(ContainSubstring("CONFIG_GPU_DRIVER_IF_NEEDED=false"))
 }
 
 func TestUbuntu2204_Name(t *testing.T) {

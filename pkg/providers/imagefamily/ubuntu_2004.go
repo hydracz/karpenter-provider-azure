@@ -90,17 +90,18 @@ func (u Ubuntu2004) ScriptlessCustomData(
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			GPUDriverType:    u.Options.GPUDriverType,
-			GPUImageSHA:      u.Options.GPUImageSHA,
-			SubnetID:         u.Options.SubnetID,
+			ClusterName:       u.Options.ClusterName,
+			ClusterEndpoint:   u.Options.ClusterEndpoint,
+			KubeletConfig:     kubeletConfig,
+			Taints:            taints,
+			Labels:            labels,
+			CABundle:          caBundle,
+			GPUNode:           u.Options.GPUNode,
+			InstallGPUDrivers: u.Options.InstallGPUDrivers,
+			GPUDriverVersion:  u.Options.GPUDriverVersion,
+			GPUDriverType:     u.Options.GPUDriverType,
+			GPUImageSHA:       u.Options.GPUImageSHA,
+			SubnetID:          u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
@@ -151,5 +152,6 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 		FIPSMode:                       fipsMode,
 		ArtifactStreaming:              artifactStreaming,
+		InstallGPUDrivers:              u.Options.InstallGPUDrivers,
 	}
 }
