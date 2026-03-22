@@ -149,6 +149,11 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
+	diskControllerType, err := r.getDiskControllerType(ctx, instanceType, nodeClass)
+	if err != nil {
+		return nil, err
+	}
+
 	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 	// Refactoring for code unification is not being invested immediately.
 	template := &template.Parameters{
@@ -180,6 +185,7 @@ func (r *defaultResolver) Resolve(
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings
 		StorageProfileSizeGB: lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		DiskControllerType:   diskControllerType,
 		ImageID:              imageID,
 		IsWindows:            false, // TODO(Windows)
 	}
@@ -199,6 +205,14 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return consts.StorageProfileEphemeral, placement, nil
 	}
 	return consts.StorageProfileManagedDisks, placement, nil
+}
+
+func (r *defaultResolver) getDiskControllerType(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (*armcompute.DiskControllerTypes, error) {
+	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return nil, err
+	}
+	return instancetype.GetDiskControllerType(sku), nil
 }
 
 func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {

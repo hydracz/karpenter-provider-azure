@@ -64,5 +64,6 @@ type Parameters struct {
 	StorageProfileIsEphemeral      bool
 	StorageProfilePlacement        armcompute.DiffDiskPlacement
 	StorageProfileSizeGB           int32
+	DiskControllerType             *armcompute.DiskControllerTypes
 	IsWindows                      bool
 }

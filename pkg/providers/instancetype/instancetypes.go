@@ -480,6 +480,18 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 	return useSIG || hasDiskControllerSupport(sku)
 }
 
+// GetDiskControllerType returns the disk controller type to use for the given SKU.
+// For NVMe-only SKUs, it returns NVMe. For SCSI-only or dual-support SKUs, it returns nil (Azure default).
+func GetDiskControllerType(sku *skewer.SKU) *armcompute.DiskControllerTypes {
+	const diskControllerTypeCapability = "DiskControllerTypes"
+	declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
+	declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
+	if declaresNVMe && !declaresSCSI {
+		return lo.ToPtr(armcompute.DiskControllerTypesNVMe)
+	}
+	return nil
+}
+
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
 	const nvme = "NvmeDisk"
