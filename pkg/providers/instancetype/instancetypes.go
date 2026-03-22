@@ -468,15 +468,16 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 }
 
 func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
-	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
+	hasDiskControllerSupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
 		const diskControllerTypeCapability = "DiskControllerTypes"
 		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
 		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
 		declaresNothing := !declaresSCSI && !declaresNVMe
-		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
+		// Allow both SCSI and NVMe SKUs; CIG Gen2 images support NVMe disk controllers
+		return declaresSCSI || declaresNVMe || declaresNothing
 	}
 
-	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+	return useSIG || hasDiskControllerSupport(sku)
 }
 
 func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {

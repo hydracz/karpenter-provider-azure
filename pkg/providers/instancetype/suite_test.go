@@ -405,9 +405,12 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 				// ensure that initial zone was made unavailable
-				zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+				calledVM := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				zone, err := utils.MakeAKSLabelZoneFromVM(&calledVM.VM)
 				Expect(err).ToNot(HaveOccurred())
-				ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
+				usedSKUName := string(lo.FromPtr(calledVM.VM.Properties.HardwareProfile.VMSize))
+				usedSKU := &skewer.SKU{Name: lo.ToPtr(usedSKUName)}
+				ExpectUnavailable(azureEnv, usedSKU, zone, karpv1.CapacityTypeSpot)
 
 				azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 				ExpectProvisionedAndWaitForPromises(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
@@ -2153,8 +2156,8 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should not include confidential SKUs", func() {
 				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 			})
-			It("should not include SKUs without compatible image", func() {
-				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2as_v6"))))
+			It("should include NVMe-only SKUs with compatible CIG Gen2 image", func() {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2as_v6"))))
 			})
 		})
 		Context("Filtering GPU SKUs AzureLinux", func() {
