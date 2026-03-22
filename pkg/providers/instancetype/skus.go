@@ -3161,6 +3161,24 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_NC96ads_A100_v4"),
 	},
 	{
+		Name: ptr.To("Standard_NC128ds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
+		Name: ptr.To("Standard_NC128lds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
+		Name: ptr.To("Standard_NC256ds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
+		Name: ptr.To("Standard_NC256lds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
+		Name: ptr.To("Standard_NC320ds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
+		Name: ptr.To("Standard_NC320lds_xl_RTXPRO6000BSE_v6"),
+	},
+	{
 		Name: ptr.To("Standard_NCC40ads_H100_v5"),
 	},
 	{
