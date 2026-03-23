@@ -31,6 +31,7 @@ const (
 	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
 	BillingTagKey                      = "compute.aks.billing"
 	BillingTagValueLinux               = "linux"
+	SkipGPUDriverInstallTagKey         = "SkipGpuDriverInstall"
 )
 
 var (
@@ -47,6 +48,10 @@ func Tags(
 	defaultTags := map[string]string{
 		KarpenterManagedTagKey: options.ClusterName,
 		BillingTagKey:          BillingTagValueLinux,
+	}
+	if !nodeClass.IsInstallGPUDrivers() {
+		// AgentBaker's current scriptless GPU skip logic is tag-based.
+		defaultTags[SkipGPUDriverInstallTagKey] = "true"
 	}
 	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
 	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,
