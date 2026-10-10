@@ -225,6 +225,57 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("NVMe OS disk controller", func() {
+		DescribeTable("should preserve NVMe through image resolution and VM creation",
+			func(provisionMode string, useSIG bool, skuName string) {
+				provisionCtx, provisionEnv := ctx, azureEnv
+				provisionCluster, provisionCloudProvider, provisioner := cluster, cloudProvider, coreProvisioner
+				if provisionMode == consts.ProvisionModeBootstrappingClient {
+					provisionCtx, provisionEnv = ctxBootstrap, azureEnvBootstrap
+					provisionCluster, provisionCloudProvider, provisioner = clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap
+				}
+				settings := *options.FromContext(provisionCtx)
+				settings.UseSIG = useSIG
+				provisionCtx = options.ToContext(provisionCtx, &settings)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+				test.ApplyDefaultStatus(nodeClass, env, useSIG)
+				Expect(provisionEnv.InstanceTypesProvider.UpdateInstanceTypes(provisionCtx)).To(Succeed())
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{skuName},
+				})
+				ExpectApplied(provisionCtx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisionedAndWaitForPromises(provisionCtx, env.Client, provisionCluster, provisionCloudProvider, provisioner, provisionEnv, pod)
+				ExpectScheduled(provisionCtx, env.Client, pod)
+				Expect(provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := provisionEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Properties.StorageProfile.DiskControllerType).To(Equal(lo.ToPtr(armcompute.DiskControllerTypesNVMe)))
+				if useSIG {
+					Expect(vm.Properties.StorageProfile.ImageReference.ID).NotTo(BeNil())
+				} else {
+					Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).NotTo(BeNil())
+				}
+				if skuName == "Standard_D128ds_v6" {
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)))
+				} else {
+					Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+				}
+			},
+			Entry("scriptless CIG managed disk", consts.ProvisionModeAKSScriptless, false, "Standard_D2as_v6"),
+			Entry("scriptless CIG ephemeral disk", consts.ProvisionModeAKSScriptless, false, "Standard_D128ds_v6"),
+			Entry("scriptless SIG managed disk", consts.ProvisionModeAKSScriptless, true, "Standard_D2as_v6"),
+			Entry("scriptless SIG ephemeral disk", consts.ProvisionModeAKSScriptless, true, "Standard_D128ds_v6"),
+			Entry("bootstrapping CIG managed disk", consts.ProvisionModeBootstrappingClient, false, "Standard_D2as_v6"),
+			Entry("bootstrapping CIG ephemeral disk", consts.ProvisionModeBootstrappingClient, false, "Standard_D128ds_v6"),
+			Entry("bootstrapping SIG managed disk", consts.ProvisionModeBootstrappingClient, true, "Standard_D2as_v6"),
+			Entry("bootstrapping SIG ephemeral disk", consts.ProvisionModeBootstrappingClient, true, "Standard_D128ds_v6"),
+		)
+	})
+
 	Context("AKS memory reservations", func() {
 		DescribeTable("should provision a pod that fits the AKS reservation but not the legacy estimate", func(provisionMode string) {
 			provisionCtx, provisionEnv := ctx, azureEnv

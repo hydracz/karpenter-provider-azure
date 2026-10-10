@@ -737,6 +737,29 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	return sizeGB, lo.ToPtr(largest.placement)
 }
 
+func GetDiskControllerType(sku *skewer.SKU) *armcompute.DiskControllerTypes {
+	if sku == nil {
+		return nil
+	}
+	controllers, err := sku.GetCapabilityString("DiskControllerTypes")
+	if err != nil {
+		return nil
+	}
+	supportsNVMe := false
+	for _, controller := range strings.Split(controllers, ",") {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(controller), string(armcompute.DiskControllerTypesSCSI)):
+			return nil
+		case strings.EqualFold(strings.TrimSpace(controller), string(armcompute.DiskControllerTypesNVMe)):
+			supportsNVMe = true
+		}
+	}
+	if supportsNVMe {
+		return lo.ToPtr(armcompute.DiskControllerTypesNVMe)
+	}
+	return nil
+}
+
 func supportedEphemeralOSDiskPlacements(sku *skewer.SKU) (cache, resource, nvme, metadataPresent bool) {
 	const capability = "SupportedEphemeralOSDiskPlacements"
 	value, err := sku.GetCapabilityString(capability)

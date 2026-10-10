@@ -164,7 +164,7 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := slices.Concat(generalTaints, startupTaints)
 
-	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	diskType, placement, diskControllerType, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +205,7 @@ func (r *defaultResolver) Resolve(
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
 		StorageProfilePlacement:   lo.FromPtr(placement),
+		DiskControllerType:        diskControllerType,
 
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings
@@ -217,18 +218,19 @@ func (r *defaultResolver) Resolve(
 	return template, nil
 }
 
-func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
+func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, diskControllerType *armcompute.DiskControllerTypes, err error) {
 	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	placement = instancetype.FindEphemeralOSDiskPlacement(sku, nodeClass)
+	diskControllerType = instancetype.GetDiskControllerType(sku)
 
 	if placement != nil {
-		return consts.StorageProfileEphemeral, placement, nil
+		return consts.StorageProfileEphemeral, placement, diskControllerType, nil
 	}
-	return consts.StorageProfileManagedDisks, nil, nil
+	return consts.StorageProfileManagedDisks, nil, diskControllerType, nil
 }
 
 // Ubuntu 22.04 FIPS images require Compute's FIPS 140-3 encryption for

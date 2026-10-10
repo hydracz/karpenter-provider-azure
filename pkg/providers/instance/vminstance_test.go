@@ -35,6 +35,50 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
+func TestVMStorageProfileDiskController(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct {
+		name       string
+		controller *armcompute.DiskControllerTypes
+		useSIG     bool
+		ephemeral  bool
+	}{
+		{name: "CIG NVMe managed", controller: lo.ToPtr(armcompute.DiskControllerTypesNVMe)},
+		{name: "CIG NVMe ephemeral", controller: lo.ToPtr(armcompute.DiskControllerTypesNVMe), ephemeral: true},
+		{name: "SIG NVMe managed", controller: lo.ToPtr(armcompute.DiskControllerTypesNVMe), useSIG: true},
+		{name: "SIG NVMe ephemeral", controller: lo.ToPtr(armcompute.DiskControllerTypesNVMe), useSIG: true, ephemeral: true},
+		{name: "default controller remains unset"},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			expect := NewWithT(test)
+			vm := newVMObject(&createVMOptions{
+				Zone:         "eastus2-1",
+				NodeClass:    &v1beta1.AKSNodeClass{},
+				InstanceType: &cloudprovider.InstanceType{Name: "Standard_D2as_v6"},
+				UseSIG:       testCase.useSIG,
+				LaunchTemplate: &launchtemplate.Template{
+					ImageID:                   "test-image",
+					DiskControllerType:        testCase.controller,
+					StorageProfileIsEphemeral: testCase.ephemeral,
+					StorageProfilePlacement:   armcompute.DiffDiskPlacementNvmeDisk,
+				},
+			})
+			expect.Expect(vm.Properties.StorageProfile.DiskControllerType).To(Equal(testCase.controller))
+			if testCase.useSIG {
+				expect.Expect(vm.Properties.StorageProfile.ImageReference.ID).To(Equal(lo.ToPtr("test-image")))
+			} else {
+				expect.Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).To(Equal(lo.ToPtr("test-image")))
+			}
+			if testCase.ephemeral {
+				expect.Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal(lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)))
+			} else {
+				expect.Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+			}
+		})
+	}
+}
+
 func TestParseSpotMaxPriceAnnotation(test *testing.T) {
 	test.Parallel()
 
