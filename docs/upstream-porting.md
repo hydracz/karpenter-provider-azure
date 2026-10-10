@@ -24,7 +24,7 @@ Assessment date: 2026-10-10.
 | CIG eligibility for NVMe-only SKUs | Use upstream | [#1642](https://github.com/Azure/karpenter-provider-azure/pull/1642) removes the old CIG block. Do not reinstate the fork's obsolete compatibility predicate. |
 | Ephemeral OS disk eligibility, capacity, placement | Use upstream | [#1870](https://github.com/Azure/karpenter-provider-azure/pull/1870) is retained without behavioral changes. NVMe temporary-disk placement is not the same as the VM OS disk controller. |
 | Explicit NVMe controller in VM create requests | Retain and adapt | Current upstream VM requests do not set the controller. Carry `DiskControllerType=NVMe` from SKU capabilities through the existing storage lookup and launch template, only for NVMe-only SKUs. Exact token matching avoids treating `NVMeV2` as `NVMe`. |
-| Scriptless AgentBaker skip-driver tag | Retain and adapt | Emit `SkipGpuDriverInstall=true` for `aksscriptless` with upstream `gpu.mode: None`. Other modes retain their upstream GPU profiles. Explicit disablement takes precedence over additional tags. |
+| Scriptless AgentBaker skip-driver tag | Drop | Do not maintain a fork-specific automatic tag. Use the upstream GPU policy below; resource tags remain explicit user configuration. |
 | Spot maximum price annotation | Retain and adapt | Keep `karpenter.azure.com/spot-max-price` on NodeClaims. Current Machine SDK supports `Billing.SpotMaxPrice`, so replace the fork's obsolete Machine API rejection with native support in both Machine modes. Preserve defaults and on-demand behavior. |
 | Existing-cluster Workload Identity helper | Retain and harden | Keep the standalone existing-cluster workflow. Pin subscription/context, reject conflicting federated credentials, propagate read failures, and scope roles to the node resource group. |
 | Build/deployment guide and local build ignores | Retain and update | Use current values-generator arguments, existing ServiceAccount ownership, and immutable image digests. Ignore root `bin/`, `dist/`, and `controller` artifacts. |
@@ -36,9 +36,8 @@ The retained work is split by feature, in this order. Identify commits by subjec
 with `git log --oneline 8389c7e9..HEAD`:
 
 1. `feat(spot): port max-price annotations across provisioning modes`
-2. `fix(gpu): honor upstream GPU mode in scriptless skip tags`
-3. `fix(storage): select NVMe controllers for NVMe-only VM sizes`
-4. `feat(deploy): port existing-cluster workload identity workflow`
+2. `fix(storage): select NVMe controllers for NVMe-only VM sizes`
+3. `feat(deploy): port existing-cluster workload identity workflow`
 
 The assessment itself is a separate documentation commit. Generated CRDs and
 dependency versions are not intentionally changed by the port.
@@ -57,7 +56,7 @@ dependency versions are not intentionally changed by the port.
 | `a305eff` fork skewer replacement | Not replayed; upstream dependency retained. |
 | `3823b3e` CIG NVMe eligibility | Already covered by upstream #1642. |
 | `f07ba1a` explicit NVMe controller | Ported with one SKU lookup and precise capability parsing. |
-| `3f8b8bd` GPU skip tag | Ported using upstream `gpu.mode`, limited to scriptless. |
+| `3f8b8bd` GPU skip tag | Dropped at the user's request; no additional GPU policy or automatic tag is maintained. |
 
 ## Upgrade Existing Configurations
 
@@ -70,7 +69,15 @@ The old fork-only field is not restored. Translate existing manifests:
 | `spec.installGPUDrivers: false` | `spec.gpu.mode: None` |
 | `spec.installGPUDrivers: true` or omitted | `spec.gpu.mode: Driver` or omitted |
 
-For a GPU Operator-managed node class:
+Example 1: use AKS-provided GPU drivers (the upstream default):
+
+```yaml
+spec:
+  gpu:
+    mode: Driver
+```
+
+Example 2: use GPU Operator or another externally managed driver installation:
 
 ```yaml
 spec:
@@ -135,7 +142,7 @@ Focused checks completed during implementation:
 - Spot create-path tests in all four provisioning modes, with zero VM/NIC/Machine
   creates for invalid Spot annotations.
 - Batch grouping and shared payload retention for different Spot prices.
-- GPU skip-tag tests across all four modes; upstream GPU tests also pass.
+- Upstream GPU policy and driver tests; no fork-specific GPU skip-tag behavior is retained.
 - NVMe exact capability matching and CIG/SIG VM payload tests.
 - NVMe full template/create-path tests in both VM modes, alongside upstream
   ephemeral disk capacity and placement tests.

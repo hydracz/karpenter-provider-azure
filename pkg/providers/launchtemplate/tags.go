@@ -22,7 +22,6 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 )
@@ -32,7 +31,6 @@ const (
 	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
 	BillingTagKey                      = "compute.aks.billing"
 	BillingTagValueLinux               = "linux"
-	SkipGPUDriverInstallTagKey         = "SkipGpuDriverInstall"
 )
 
 var (
@@ -49,9 +47,6 @@ func Tags(
 	defaultTags := map[string]string{
 		KarpenterManagedTagKey: options.ClusterName,
 		BillingTagKey:          BillingTagValueLinux,
-	}
-	if options.ProvisionMode == consts.ProvisionModeAKSScriptless && !nodeClass.IsGPUDriverInstallationEnabled() {
-		defaultTags[SkipGPUDriverInstallTagKey] = "true"
 	}
 	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
 	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,
