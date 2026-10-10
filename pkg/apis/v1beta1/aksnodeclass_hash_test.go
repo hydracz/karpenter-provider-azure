@@ -108,6 +108,13 @@ var _ = Describe("Hash", func() {
 		Entry("ArtifactStreaming.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ArtifactStreaming: &v1beta1.ArtifactStreaming{Enabled: lo.ToPtr(true)}}}),
 		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 	)
+	It("should preserve the hash for disabled public IPs and change it when enabled", func() {
+		hash := nodeClass.Hash()
+		nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(false)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+		nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+		Expect(nodeClass.Hash()).NotTo(Equal(hash))
+	})
 	It("should hash omitted, empty, and explicit Unmanaged NVIDIA settings equally", func() {
 		nodeClass.Spec.GPU = &v1beta1.GPU{Mode: lo.ToPtr(v1beta1.GPUModeDriver)}
 		omittedHash := nodeClass.Hash()

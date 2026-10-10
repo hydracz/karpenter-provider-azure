@@ -111,6 +111,11 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// enableNodePublicIP allocates a dedicated Standard IPv4 address for each node.
+	// Defaults to false. Existing NSG rules still apply; no inbound rules are opened.
+	// Public IP and outbound data transfer charges apply. NAT Gateway or route overrides may take precedence.
+	// +optional
+	EnableNodePublicIP *bool `json:"enableNodePublicIP,omitempty"`
 	// capacityReservation configures the Capacity Reservation Group that instances
 	// provisioned by this NodeClass target.
 	// +optional
@@ -847,6 +852,9 @@ const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	spec := in.Spec.DeepCopy()
+	if !lo.FromPtr(spec.EnableNodePublicIP) {
+		spec.EnableNodePublicIP = nil
+	}
 	if spec.CapacityReservation != nil {
 		spec.CapacityReservation.GroupID = lo.ToPtr(strings.ToLower(lo.FromPtr(spec.CapacityReservation.GroupID)))
 	}

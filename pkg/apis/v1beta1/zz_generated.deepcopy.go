@@ -93,6 +93,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.EnableNodePublicIP != nil {
+		in, out := &in.EnableNodePublicIP, &out.EnableNodePublicIP
+		*out = new(bool)
+		**out = **in
+	}
 	if in.CapacityReservation != nil {
 		in, out := &in.CapacityReservation, &out.CapacityReservation
 		*out = new(CapacityReservationConfiguration)

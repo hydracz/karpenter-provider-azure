@@ -19,6 +19,7 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -281,6 +282,75 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
+func runNodePublicIPTests(provisionModes ...string) {
+	for _, mode := range provisionModes {
+		Context("Node public IP "+mode, func() {
+			BeforeEach(func() {
+				testOptions.ProvisionMode = mode
+				ctx = options.ToContext(ctx, testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			})
+			DescribeTable("should honor explicit node public IP configuration", func(enabled *bool) {
+				nodeClass.Spec.EnableNodePublicIP = enabled
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				conditions := nodeClass.GetConditions()
+				for index := range conditions {
+					conditions[index].ObservedGeneration = nodeClass.Generation
+				}
+				nodeClass.SetConditions(conditions)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).NotTo(HaveOccurred())
+				if mode == consts.ProvisionModeAKSMachineAPI || mode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+					input := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+					Expect(input.AKSMachine.Properties.Network.EnableNodePublicIP).To(Equal(enabled))
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
+					return
+				}
+				name := instance.GenerateResourceName(nodeClaim.Name)
+				nic, err := azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, name)
+				Expect(err).NotTo(HaveOccurred())
+				if !lo.FromPtr(enabled) {
+					Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress).To(BeNil())
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
+					return
+				}
+				address, err := azureEnv.PublicIPAddressesAPI.Get(ctx, testOptions.NodeResourceGroup, name, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(nic.Properties.NetworkSecurityGroup).NotTo(BeNil())
+				Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress.ID).To(Equal(address.ID))
+				_, err = CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(cloudProvider.Delete(ctx, created)).To(Succeed())
+				_, err = azureEnv.PublicIPAddressesAPI.Get(ctx, testOptions.NodeResourceGroup, name, nil)
+				Expect(err).To(HaveOccurred())
+			},
+				Entry("omitted", nil),
+				Entry("disabled", lo.ToPtr(false)),
+				Entry("enabled", lo.ToPtr(true)),
+			)
+			if mode == consts.ProvisionModeAKSScriptless || mode == consts.ProvisionModeBootstrappingClient {
+				It("should clean the NIC and public IP after VM creation fails", func() {
+					nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+					azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(fmt.Errorf("test VM creation failure"))
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+					_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+					Expect(err).To(HaveOccurred())
+					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(Equal(1))
+					Expect(azureEnv.PublicIPAddressesAPI.DeleteBehavior.CalledWithInput.Len()).To(Equal(1))
+					_, err = azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, instance.GenerateResourceName(nodeClaim.Name))
+					Expect(err).To(HaveOccurred())
+				})
+			}
+		})
+	}
+}
+
 func runSpotMaxPriceTests(provisionModes ...string) {
 	for _, provisionMode := range provisionModes {
 		Context("Spot max price "+provisionMode, func() {
@@ -435,6 +505,7 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		runSpotMaxPriceTests(consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
+		runNodePublicIPTests(consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
 
 		DescribeTable("Custom Compute Gallery VM creation and drift", func(mode string) {
 			testOptions.ProvisionMode = mode

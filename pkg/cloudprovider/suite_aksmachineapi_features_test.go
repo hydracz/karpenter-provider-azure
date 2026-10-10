@@ -93,6 +93,7 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		runSpotMaxPriceTests(consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch)
+		runNodePublicIPTests(consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch)
 
 		It("should pass the capacity reservation group through the Machine template", func() {
 			groupID := "/subscriptions/subscriptionID/resourceGroups/rg/providers/Microsoft.Compute/capacityReservationGroups/reserved"

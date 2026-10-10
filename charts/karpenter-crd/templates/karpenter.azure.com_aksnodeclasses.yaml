@@ -1252,6 +1252,12 @@ spec:
                 required:
                 - groupID
                 type: object
+              enableNodePublicIP:
+                description: |-
+                  enableNodePublicIP allocates a dedicated Standard IPv4 address for each node.
+                  Defaults to false. Existing NSG rules still apply; no inbound rules are opened.
+                  Public IP and outbound data transfer charges apply. NAT Gateway or route overrides may take precedence.
+                type: boolean
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes

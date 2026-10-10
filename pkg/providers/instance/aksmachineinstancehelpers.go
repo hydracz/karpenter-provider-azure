@@ -126,10 +126,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: nodeImageVersionPtr,
 			Network: &armcontainerservice.MachineNetworkProperties{
-				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
+				VnetSubnetID:       nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
+				EnableNodePublicIP: nodeClass.Spec.EnableNodePublicIP,
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
 				// PodSubnetID:          "",
-				// EnableNodePublicIP:   nil,
 				// NodePublicIPPrefixID: "",
 				// IPTags:               nil,
 			},
