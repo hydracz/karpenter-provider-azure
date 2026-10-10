@@ -27,6 +27,8 @@ Assessment date: 2026-10-10.
 | Scriptless AgentBaker skip-driver tag | Drop | Do not maintain a fork-specific automatic tag. Use the upstream GPU policy below; resource tags remain explicit user configuration. |
 | Spot maximum price annotation | Retain and adapt | Keep `karpenter.azure.com/spot-max-price` on NodeClaims. Current Machine SDK supports `Billing.SpotMaxPrice`, so replace the fork's obsolete Machine API rejection with native support in both Machine modes. Preserve defaults and on-demand behavior. |
 | Existing-cluster Workload Identity helper | Retain and harden | Keep the standalone existing-cluster workflow. Pin subscription/context, reject conflicting federated credentials, propagate read failures, and scope roles to the node resource group. |
+| Custom Compute Gallery image | Add | `spec.imageID` accepts a fixed generalized Linux Gallery version for the two VM modes. Metadata determines architecture and generation; configuration/permission errors clear stale image readiness. |
+| Node public IPv4 | Add | Opt-in `spec.enableNodePublicIP`; VM modes manage an owned Standard IP and cleanup, Machine modes use the native network field. Default behavior and hashes remain unchanged. |
 | Build/deployment guide and local build ignores | Retain and update | Use current values-generator arguments, existing ServiceAccount ownership, and immutable image digests. Ignore root `bin/`, `dist/`, and `controller` artifacts. |
 | Historical GPU/image analysis documents | Supersede | Their preview SKU names, old GPU API, driver versions, and unsupported-mode statements are no longer reliable operational guidance. This assessment and the updated deployment guide replace them; originals remain in the source fork. |
 
@@ -39,8 +41,16 @@ with `git log --oneline 8389c7e9..HEAD`:
 2. `fix(storage): select NVMe controllers for NVMe-only VM sizes`
 3. `feat(deploy): port existing-cluster workload identity workflow`
 
-The assessment itself is a separate documentation commit. Generated CRDs and
-dependency versions are not intentionally changed by the port.
+Follow-up extension commits:
+
+1. `chore(gpu): drop fork-specific driver skip behavior`
+2. `feat(image): support fixed custom Compute Gallery images`
+3. `feat(network): support opt-in per-node public IPv4`
+
+The assessment itself is a separate documentation commit. The original port did
+not change generated CRDs or dependencies. The custom-image/public-IP extension
+adds its two fields to the v1beta1 CRD through the repository generator; dependency
+versions and the unserved v1alpha2 API remain unchanged.
 
 ## Source Commit Accounting
 
@@ -133,7 +143,129 @@ the fork's older Windows support assumptions. See the authoritative
   drift and disruption budgets before resuming provisioning; crossing months of
   upstream changes is not guaranteed to preserve all existing node hashes.
 
-## Validation
+## New Configuration Examples
+
+Use the existing self-hosted Workload Identity deployment flow with
+`PROVISION_MODE=aksscriptless` and `USE_SIG=false` for the following examples.
+The AKS system pool is separate and must already have functioning egress.
+
+Official CIG image selection with direct node IPv4:
+
+```yaml
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: cig-public
+spec:
+  imageFamily: Ubuntu2404
+  enableNodePublicIP: true
+  osDiskSizeGB: 128
+```
+
+Custom Gallery image, based on an official CIG version:
+
+```yaml
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: custom-public
+spec:
+  imageFamily: Ubuntu2404
+  imageID: /subscriptions/<subscription-id>/resourceGroups/<image-rg>/providers/Microsoft.Compute/galleries/<gallery>/images/<definition>/versions/1.0.0
+  enableNodePublicIP: true
+  osDiskSizeGB: 128
+```
+
+Bound the test NodePool and choose an actually available regional SKU. This
+example uses an NVMe-only v6 family member; quota and availability must be
+confirmed in the target subscription before use:
+
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: porting-validation
+spec:
+  limits:
+    cpu: "8"
+  template:
+    metadata:
+      annotations:
+        karpenter.azure.com/spot-max-price: "-1"
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: custom-public
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: [amd64]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: [Standard_D4as_v6]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [on-demand]
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m
+```
+
+First use on-demand to separate image/network failures from Spot capacity. Then
+switch the capacity-type requirement to `spot` for a separate Spot launch and
+inspect the VM billing profile. The annotation is intentionally ignored during
+the on-demand run. For the official-image run, change the NodeClass reference to
+`cig-public`.
+
+- [Custom image build, generalization, and publication](custom-images.md)
+- [Public IP behavior, cost, topology, and cleanup](node-public-ip.md)
+- [Current validation report and authentication blocker](runtime-validation-report.md)
+
+## Testing Strategy
+
+Current local result: `make test` passed all 41 suites in 18m28s with 71.5%
+composite coverage. The live-cluster phase is blocked by Azure CLI MFA expiry
+(`AADSTS50078`); no new cloud resources have been created. See the separate
+[validation report](runtime-validation-report.md) for evidence and remaining gates.
+
+Application type: Kubernetes controller; no browser UI. Reuse the existing Go,
+Ginkgo, envtest, fake Azure clients, and real-cluster E2E infrastructure. New
+provider/status/create/cleanup cases are reachable through the canonical
+`make test` command. Docker and Node.js were verified available; Docker is useful
+for controller image builds, while browser testing is not applicable.
+
+Local tier: validate admission, default/hash compatibility, fixed-image metadata,
+bootstrap, VM/Machine payloads, idempotency, failed creates, and orphan cleanup.
+Use fake Azure clients and the local Kubernetes API server; these are not a
+substitute for live Azure behavior.
+
+Live tier: create a uniquely named isolated test environment in the selected
+learning subscription, with one small system node, bounded Karpenter capacity,
+and a disposable image builder. Do not modify the existing Terraform-owned
+cluster. Start with a small CPU-only budget; GPU/NAP fleet validation is outside
+this bounded rollout. Keep original kubeconfig contexts separate.
+
+Required live journeys:
+
+1. Official CIG: create a NodeClaim, observe a Ready node/working Pod, inspect the
+   exact image reference and NVMe controller, then remove the test resources.
+2. Custom image: build from an immutable official CIG, publish a generalized
+   Gallery version, grant scoped access, create a node and verify its build
+   marker. Validate rejection with an invalid image ID/read permission, then
+   verify replacement after changing the immutable version.
+3. Public IP and Spot: observe the node IP and external source address, confirm
+   the actual NAT/LB/route topology, inspect a separate Spot VM's MaxPrice, then
+   delete the NodeClaim and confirm the VM/NIC/disk/IP are gone. Exercise an
+   intentional provisioning failure and confirm cleanup.
+
+Record per-journey commands, exit codes, resource IDs, and pass/fail counts without
+credentials. Clean up disposable workloads and builder resources. A live PASS
+requires observable node readiness, image marker, egress source, billing payload,
+and cleanup evidence, not merely successful resource submission. Authentication
+or quota blockers leave that tier UNVERIFIED, not passed via mocks.
+
+## Initial Port Validation
 
 Focused checks completed during implementation:
 
