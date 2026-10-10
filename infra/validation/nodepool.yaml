@@ -1,0 +1,37 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: validation
+spec:
+  limits:
+    cpu: '4'
+  template:
+    metadata:
+      annotations:
+        karpenter.azure.com/spot-max-price: '-1'
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: val-official
+      expireAfter: Never
+      taints:
+        - key: validation-only
+          value: 'true'
+          effect: NoSchedule
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: [amd64]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: [Standard_D4ds_v6]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [on-demand]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: [eastus2-1]
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 5m

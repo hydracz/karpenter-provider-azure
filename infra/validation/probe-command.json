@@ -1,0 +1,3 @@
+{
+  "command": "set -eu; kubectl get nodes -o wide; command -v helm; command -v jq; command -v curl; pwd"
+}

@@ -1,0 +1,3 @@
+{
+  "command": "set -eu; bash rollout-controller.sh; bash test-cleanup.sh; bash test-official.sh"
+}

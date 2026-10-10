@@ -1,0 +1,3 @@
+{
+  "command": "set -eu; kubectl get aksnodeclasses,nodepools,nodeclaims -o wide; kubectl get aksnodeclass val-official -o json | jq '{spec:.spec,status:.status}'; kubectl -n validation get pods -o wide 2>/dev/null || true; kubectl -n kube-system logs deployment/karpenter -c controller --tail=80"
+}

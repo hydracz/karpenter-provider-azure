@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "eastus2" },
+    "clusterName": { "value": "aks-karpenter-validation" },
+    "nodeResourceGroupName": { "value": "rg-karpenter-nodes-20261011" },
+    "kubernetesVersion": { "value": "1.35.8" },
+    "systemVMSize": { "value": "Standard_D2s_v5" }
+  }
+}

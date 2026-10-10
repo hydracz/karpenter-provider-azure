@@ -1,0 +1,3 @@
+{
+  "command": "kubectl -n kube-system get deployment karpenter; kubectl get nodes -o wide; kubectl get nodeclaims -o wide; kubectl -n validation get pods -o wide; kubectl get nodepool validation -o json | jq '{spec:.spec,status:.status}'; kubectl get pods -A -o json | jq '[.items[] | select(.metadata.namespace | contains(\"command\")) | {name:.metadata.name,namespace:.metadata.namespace,node:.spec.nodeName,phase:.status.phase}]'"
+}

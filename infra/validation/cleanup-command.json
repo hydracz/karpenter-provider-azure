@@ -1,0 +1,3 @@
+{
+  "command": "set -eu; bash test-cleanup.sh"
+}

@@ -1,0 +1,71 @@
+replicas: 1
+nodeSelector:
+  kubernetes.azure.com/agentpool: sys
+serviceAccount:
+  name: karpenter-sa
+  annotations:
+    azure.workload.identity/client-id: ${CONTROLLER_CLIENT_ID}
+podLabels:
+  azure.workload.identity/use: 'true'
+controller:
+  image:
+    repository: ${CONTROLLER_REPOSITORY}
+    tag: ${CONTROLLER_TAG}
+    digest: ${CONTROLLER_DIGEST}
+  resources:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: '1'
+      memory: 2Gi
+  env:
+    - name: CLUSTER_NAME
+      value: ${CLUSTER_NAME}
+    - name: CLUSTER_ENDPOINT
+      value: ${CLUSTER_ENDPOINT}
+    - name: KUBELET_BOOTSTRAP_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: karpenter-bootstrap
+          key: token
+    - name: SSH_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: karpenter-bootstrap
+          key: sshPublicKey
+    - name: NETWORK_PLUGIN
+      value: azure
+    - name: NETWORK_PLUGIN_MODE
+      value: overlay
+    - name: NETWORK_POLICY
+      value: cilium
+    - name: NETWORK_DATAPLANE
+      value: cilium
+    - name: VNET_SUBNET_ID
+      value: ${NODE_SUBNET_ID}
+    - name: VNET_GUID
+      value: ${VNET_GUID}
+    - name: NODE_IDENTITIES
+      value: ${KUBELET_IDENTITY_ID}
+    - name: KUBELET_IDENTITY_CLIENT_ID
+      value: ${KUBELET_CLIENT_ID}
+    - name: AZURE_SUBSCRIPTION_ID
+      value: ${AZURE_SUBSCRIPTION_ID}
+    - name: LOCATION
+      value: ${LOCATION}
+    - name: AZURE_NODE_RESOURCE_GROUP
+      value: ${NODE_RESOURCE_GROUP}
+    - name: ARM_RESOURCE_GROUP
+      value: ${AZURE_RESOURCE_GROUP}
+    - name: PROVISION_MODE
+      value: aksscriptless
+    - name: USE_SIG
+      value: 'false'
+    - name: ENABLE_AZURE_SDK_LOGGING
+      value: 'false'
+logLevel: info
+settings:
+  computeRecommendationMode: disabled
+  featureGates:
+    capacityBuffer: false

@@ -1,0 +1,10 @@
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: val-official
+spec:
+  imageFamily: Ubuntu2404
+  enableNodePublicIP: true
+  osDiskSizeGB: 128
+  tags:
+    Purpose: karpenter-live-validation
