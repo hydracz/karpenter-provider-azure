@@ -13,6 +13,12 @@ Assessment date: 2026-10-10.
   The original fork working tree and branch were left unchanged. New commits are
   on the upstream checkout's existing `main`; nothing was pushed to either remote.
 
+During live validation, a later fetch on 2026-10-11 advanced `origin/main` to
+`6c7e6ba8`, five commits beyond this pinned baseline. Those OS-disk, Node Hardening,
+and development-container updates are not included in this port or its validation
+claims. The deployed controller remains the tested `f03cdd78` build; rebasing onto
+the newer upstream tip requires a separate regression and deployment validation.
+
 ## Feature Decisions
 
 | Feature | Decision | Evidence and resulting behavior |

@@ -85,8 +85,8 @@ public-IP code, to verify the feature commit is independently buildable.
   the new test system pool has that taint removed. Workload probes explicitly
   select the validation NodePool and cannot run on system nodes.
 - Test worker templates now use a dedicated `validation-only` taint, tolerated
-  only by the probe. This prevents management Pods from scheduling onto a worker
-  that a cleanup command is about to delete.
+  by the probe. This keeps management Pods without a matching toleration off
+  workers being cleaned up; system Pods with broad tolerations can still use them.
 - Azure rejected NIC public-IP attachment while the NIC referenced an outbound
   rule's backend pool. The provider now excludes those pools, preserves eligible
   inbound pools and applies the same rule during retries. This was reproduced
