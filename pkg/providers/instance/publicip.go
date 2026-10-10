@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -50,15 +51,25 @@ func (p *DefaultVMProvider) attachPublicIP(ctx context.Context, nic *armnetwork.
 	if lo.FromPtr(address.ID) == "" {
 		return fmt.Errorf("created node public IP has no resource ID")
 	}
-	if configuration.Properties.PublicIPAddress != nil && strings.EqualFold(lo.FromPtr(configuration.Properties.PublicIPAddress.ID), *address.ID) {
+	backendPools := lo.Map(opts.BackendPools.IPv4PoolIDs, func(poolID string, _ int) *armnetwork.BackendAddressPool {
+		return &armnetwork.BackendAddressPool{ID: lo.ToPtr(poolID)}
+	})
+	if publicIPBindingMatches(configuration, address, backendPools) {
 		return nil
 	}
+	configuration.Properties.LoadBalancerBackendAddressPools = backendPools
 	configuration.Properties.PublicIPAddress = &armnetwork.PublicIPAddress{ID: address.ID}
 	_, err = createNic(ctx, p.azClient.NetworkInterfacesClient(), p.resourceGroup, opts.NICName, *nic)
 	if err != nil {
 		return fmt.Errorf("attaching public IP to NIC %q: %w", opts.NICName, err)
 	}
 	return nil
+}
+
+func publicIPBindingMatches(configuration *armnetwork.InterfaceIPConfiguration, address *armnetwork.PublicIPAddress, backendPools []*armnetwork.BackendAddressPool) bool {
+	current := configuration.Properties.PublicIPAddress
+	return current != nil && strings.EqualFold(lo.FromPtr(current.ID), lo.FromPtr(address.ID)) &&
+		reflect.DeepEqual(configuration.Properties.LoadBalancerBackendAddressPools, backendPools)
 }
 
 func ownedPublicIP(address *armnetwork.PublicIPAddress, name, cluster string) bool {

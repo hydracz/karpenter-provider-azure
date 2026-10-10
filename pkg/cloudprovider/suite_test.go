@@ -58,6 +58,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/zones"
 	corestatus "github.com/awslabs/operatorpkg/status"
@@ -289,6 +290,8 @@ func runNodePublicIPTests(provisionModes ...string) {
 				testOptions.ProvisionMode = mode
 				ctx = options.ToContext(ctx, testOptions)
 				azureEnv = test.NewEnvironment(ctx, env)
+				balancer := test.MakeStandardLoadBalancer(testOptions.NodeResourceGroup, loadbalancer.SLBName, true)
+				azureEnv.LoadBalancersAPI.LoadBalancers.Store(lo.FromPtr(balancer.ID), balancer)
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			})
@@ -314,13 +317,19 @@ func runNodePublicIPTests(provisionModes ...string) {
 				name := instance.GenerateResourceName(nodeClaim.Name)
 				nic, err := azureEnv.VMInstanceProvider.GetNic(ctx, testOptions.NodeResourceGroup, name)
 				Expect(err).NotTo(HaveOccurred())
+				outboundPoolID := fake.MakeBackendAddressPoolID(testOptions.NodeResourceGroup, loadbalancer.SLBName, loadbalancer.SLBOutboundBackendPoolName)
+				inboundPoolID := fake.MakeBackendAddressPoolID(testOptions.NodeResourceGroup, loadbalancer.SLBName, loadbalancer.SLBInboundBackendPoolName)
+				pools := nic.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
+				Expect(pools).To(ContainElement(HaveField("ID", Equal(lo.ToPtr(inboundPoolID)))))
 				if !lo.FromPtr(enabled) {
+					Expect(pools).To(ContainElement(HaveField("ID", Equal(lo.ToPtr(outboundPoolID)))))
 					Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress).To(BeNil())
 					Expect(azureEnv.PublicIPAddressesAPI.CreateBehavior.CalledWithInput.Len()).To(BeZero())
 					return
 				}
 				address, err := azureEnv.PublicIPAddressesAPI.Get(ctx, testOptions.NodeResourceGroup, name, nil)
 				Expect(err).NotTo(HaveOccurred())
+				Expect(pools).NotTo(ContainElement(HaveField("ID", Equal(lo.ToPtr(outboundPoolID)))))
 				Expect(nic.Properties.NetworkSecurityGroup).NotTo(BeNil())
 				Expect(nic.Properties.IPConfigurations[0].Properties.PublicIPAddress.ID).To(Equal(address.ID))
 				_, err = CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)

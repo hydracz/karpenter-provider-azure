@@ -872,7 +872,10 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 	return compatibleWithTrue && !compatibleWithFalse
 }
 
-func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim) *loadbalancer.BackendAddressPools {
+func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) *loadbalancer.BackendAddressPools {
+	if lo.FromPtr(nodeClass.Spec.EnableNodePublicIP) {
+		pools = pools.WithoutOutboundPools()
+	}
 	// Azure CCM's updateNodeCaches adds nodes to its load balancer exclusion cache based on label
 	// presence, regardless of value. Match that here so initial NIC backend pool assignment agrees.
 	// https://github.com/kubernetes-sigs/cloud-provider-azure/blob/e2712175252faaf96b39313b303f94b79a1d1171/pkg/provider/azure.go#L851-L868
@@ -927,7 +930,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting backend pools: %w", err)
 	}
-	backendPools = filterBackendPools(backendPools, nodeClaim)
+	backendPools = filterBackendPools(backendPools, nodeClaim, nodeClass)
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
@@ -970,7 +973,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if refreshErr != nil {
 			return nil, fmt.Errorf("refreshing backend pools after network interface failure: %w", refreshErr)
 		}
-		nicOpts.BackendPools = filterBackendPools(refreshedPools, nodeClaim)
+		nicOpts.BackendPools = filterBackendPools(refreshedPools, nodeClaim, nodeClass)
 		// Try again
 		nicReference, err = p.createNetworkInterface(ctx, nicOpts)
 	}

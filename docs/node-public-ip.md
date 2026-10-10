@@ -34,6 +34,13 @@ The controller identity requires Network Contributor or equivalent narrowly scop
 public-IP/NIC permissions on the node resource group. Public IP quotas also limit
 scale-out; bound NodePool capacity and check regional limits.
 
+Azure rejects a NIC with an instance public IP if it references a backend pool
+used by an LB outbound rule (`NicWithPublicIpCannotReferencePoolWithOutboundRule`).
+The VM path excludes the AKS outbound pools and any pools explicitly referenced
+by outbound rules, including on retries, while retaining eligible inbound pools.
+If an inbound service shares the same outbound-rule pool, split those pools in
+the load-balancer configuration before using public-IP nodes for that service.
+
 ## Egress and Cost
 
 A node public IP is an explicit outbound method, but does not itself remove a NAT
