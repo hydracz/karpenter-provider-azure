@@ -70,9 +70,12 @@ printf '%s\n' "$BASE_IMAGE_ID"
 ```
 
 Record the returned immutable ID and the target Kubernetes version in your build
-record. The latest regional CIG version was not queried during this implementation
-because the Azure CLI session required MFA renewal. No unverified version number
-is presented here as the latest available image.
+record. In the eastus2 validation on 2026-10-11, the selected published version was
+`202610.08.0` (published 2026-10-09). Its x64/Gen2/generalized and SCSI/NVMe
+metadata was checked before use. Query again for a future build rather than
+treating this dated version as permanently latest. The derived Gallery `1.0.0`
+booted successfully and its build marker was verified on a Ready AKS node; see
+[the runtime report](runtime-validation-report.md).
 
 ## Build on a Fresh VM
 

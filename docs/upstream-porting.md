@@ -203,7 +203,7 @@ spec:
           values: [amd64]
         - key: node.kubernetes.io/instance-type
           operator: In
-          values: [Standard_D4as_v6]
+          values: [Standard_D4ds_v6]
         - key: karpenter.sh/capacity-type
           operator: In
           values: [on-demand]
@@ -225,9 +225,21 @@ the on-demand run. For the official-image run, change the NodeClass reference to
 ## Testing Strategy
 
 Current local result: `make test` passed all 41 suites in 18m28s with 71.5%
-composite coverage. The live-cluster phase is blocked by Azure CLI MFA expiry
-(`AADSTS50078`); no new cloud resources have been created. See the separate
+composite coverage. MFA was renewed and a private AKS 1.35.8 validation cluster
+was deployed. Official CIG and custom-image nodes, build-marker verification,
+direct public-IP egress, NVMe, Spot MaxPrice 0.10, permission rejection, and
+deletion cleanup passed live. A live LB compatibility defect was corrected in
+`f03cdd78`. Test workers and builder resources were removed; the cluster remains
+with one small system node. See the separate
 [validation report](runtime-validation-report.md) for evidence and remaining gates.
+
+The retained environment is `aks-karpenter-validation` in
+`rg-karpenter-validation-20261011` (eastus2), with node resources in
+`rg-karpenter-nodes-20261011`. The tested Gallery image is
+`karpenterValidation/aksUbuntu2404Gen2/1.0.0`. Use the
+[validation artifacts](../infra/validation/README.md) for exact deployment and
+test commands. It is a private cluster; use its authorized Run Command path or
+an approved private network connection. Retained infrastructure still costs money.
 
 Application type: Kubernetes controller; no browser UI. Reuse the existing Go,
 Ginkgo, envtest, fake Azure clients, and real-cluster E2E infrastructure. New
