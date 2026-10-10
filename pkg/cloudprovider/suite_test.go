@@ -436,6 +436,42 @@ var _ = Describe("CloudProvider", func() {
 
 		runSpotMaxPriceTests(consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
 
+		DescribeTable("Custom Compute Gallery VM creation and drift", func(mode string) {
+			testOptions.ProvisionMode = mode
+			testOptions.UseSIG = false
+			ctx = options.ToContext(ctx, testOptions)
+			azureEnv = test.NewEnvironment(ctx, env)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			test.ApplyDefaultStatus(nodeClass, env, false)
+			imageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/arbitrary-name/versions/1.0.0"
+			nodeClass.Spec.ImageID = &imageID
+			reconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+			created, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created.Status.ImageID).To(Equal(imageID))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference.ID).To(Equal(&imageID))
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).To(BeNil())
+			nodeClass.Spec.ImageID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/arbitrary-name/versions/2.0.0")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, created)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(drifted).NotTo(BeEmpty())
+		},
+			Entry("scriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrapping client", consts.ProvisionModeBootstrappingClient),
+		)
+
 		It("should reject managed GPU before creating a VM on an unsupported provision mode", func() {
 			nodeClass.Spec.GPU = &v1beta1.GPU{
 				Mode: lo.ToPtr(v1beta1.GPUModeDriver),

@@ -59,6 +59,10 @@ type CommunityGalleryImageVersionsAPI interface {
 	NewListPager(location string, publicGalleryName string, galleryImageName string, options *armcomputev5.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcomputev5.CommunityGalleryImageVersionsClientListResponse]
 }
 
+type ComputeGalleryImagesAPI interface {
+	Get(ctx context.Context, imageVersionID string) (*armcomputev5.GalleryImage, *armcomputev5.GalleryImageVersion, error)
+}
+
 type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error)
 }

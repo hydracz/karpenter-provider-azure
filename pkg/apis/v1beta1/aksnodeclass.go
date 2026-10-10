@@ -103,6 +103,8 @@ func (a *ArtifactStreaming) IsEnabled(arch string) bool {
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation requires imageFamily AzureLinux",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (has(self.imageFamily) && self.imageFamily == 'AzureLinux') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with fipsMode FIPS",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.fipsMode) || self.fipsMode != 'FIPS') : true"
 // +kubebuilder:validation:XValidation:message="workloadRuntime KataVmIsolation is not supported with TrustedLaunch",rule="has(self.workloadRuntime) && self.workloadRuntime == 'KataVmIsolation' ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm) && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot) && self.security.trustedLaunch.secureBoot))) : true"
+// +kubebuilder:validation:XValidation:message="imageID requires an explicit Ubuntu2204, Ubuntu2404, or AzureLinux imageFamily",rule="!has(self.imageID) || (has(self.imageFamily) && self.imageFamily in ['Ubuntu2204','Ubuntu2404','AzureLinux'])"
+// +kubebuilder:validation:XValidation:message="imageID cannot be combined with versions.nodeImageVersion",rule="!has(self.imageID) || !has(self.versions) || !has(self.versions.nodeImageVersion)"
 type AKSNodeClassSpec struct {
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -125,9 +127,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=2048
 	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
-	// ImageID is the ID of the image that instances use.
-	// Not exposed in the API yet
-	ImageID *string `json:"-"`
+	// imageID selects a fixed, generalized Linux Azure Compute Gallery image version.
+	// The image must be derived from an AKS image matching imageFamily and the node Kubernetes version.
+	// Supported only in aksscriptless and bootstrappingclient modes. The controller identity needs Gallery read access.
+	// +kubebuilder:validation:Pattern=`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Compute/galleries/[^/]+/images/[^/]+/versions/[0-9]+\.[0-9]+\.[0-9]+$`
+	// +optional
+	ImageID *string `json:"imageID,omitempty"`
 	// imageFamily is the image family that instances use.
 	// AzureContainerLinux requires an AKS Machine API provision mode with shared image gallery (SIG) access.
 	// Windows node support for the Windows2022 and Windows2025 image families is in preview and

@@ -156,7 +156,12 @@ func (r *defaultResolver) Resolve(
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
-	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+	var imageDistro string
+	if nodeClass.Spec.ImageID != nil {
+		imageDistro, err = mapCustomImageToDistro(nodeClass, imageFamily)
+	} else {
+		imageDistro, err = mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -364,6 +369,9 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 		return "", err
 	}
 	for _, availableImage := range nodeImages {
+		if nodeClass.Spec.ImageID != nil && availableImage.ID != *nodeClass.Spec.ImageID {
+			continue
+		}
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
 			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,
@@ -372,4 +380,23 @@ func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNo
 		}
 	}
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
+}
+
+func mapCustomImageToDistro(nodeClass *v1beta1.AKSNodeClass, family ImageFamily) (string, error) {
+	images, err := nodeClass.GetImages()
+	if err != nil {
+		return "", err
+	}
+	for _, image := range images {
+		if image.ID != lo.FromPtr(nodeClass.Spec.ImageID) {
+			continue
+		}
+		requirements := scheduling.NewNodeSelectorRequirements(image.Requirements...)
+		for _, candidate := range family.DefaultImages(true, nodeClass.Spec.FIPSMode, nodeClass.IsTrustedLaunchEnabled(), nodeClass.IsKataEnabled()) {
+			if requirements.Compatible(candidate.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels) == nil {
+				return candidate.Distro, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no bootstrap distro matches the resolved custom image")
 }

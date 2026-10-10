@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 )
 
@@ -105,6 +106,40 @@ func TestResolveFIPS1403Encryption(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(parameters.ImageID).To(Equal(imageID))
 			g.Expect(parameters.EnableFIPS1403Encryption).To(Equal(tc.want))
+		})
+	}
+}
+
+func TestResolveCustomImage(test *testing.T) {
+	for _, mode := range []string{consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient} {
+		test.Run(mode, func(test *testing.T) {
+			expect := NewWithT(test)
+			imageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/customer/images/arbitrary-name/versions/1.0.0"
+			nodeClass := &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), ImageID: &imageID, OSDiskSizeGB: lo.ToPtr[int32](128)},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: lo.ToPtr("1.35.0"),
+					Images: []v1beta1.NodeImage{{ID: imageID, Requirements: []corev1.NodeSelectorRequirement{
+						{Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.ArchitectureAmd64}},
+						{Key: v1beta1.LabelSKUHyperVGeneration, Operator: corev1.NodeSelectorOpIn, Values: []string{v1beta1.HyperVGenerationV2}},
+					}}},
+				},
+			}
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
+			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+			ctx := options.ToContext(context.Background(), &options.Options{ProvisionMode: mode, UseSIG: false})
+			resolver := NewDefaultResolver(nil, nil, stubInstanceTypeProvider{}, nil)
+			parameters, err := resolver.Resolve(ctx, nodeClass, &karpv1.NodeClaim{}, localDNSTestInstanceType("Standard_D4s_v3", 4, 16384), &template.StaticParameters{
+				ClusterName: "test-cluster", KubernetesVersion: "1.35.0", Arch: karpv1.ArchitectureAmd64,
+			})
+			expect.Expect(err).NotTo(HaveOccurred())
+			expect.Expect(parameters.ImageID).To(Equal(imageID))
+			config, ok := parameters.CustomScriptsNodeBootstrapping.(customscriptsbootstrap.ProvisionClientBootstrap)
+			expect.Expect(ok).To(BeTrue())
+			expect.Expect(config.ImageDistro).To(Equal("aks-ubuntu-containerd-22.04-gen2"))
+			nodeClass.Spec.ImageID = lo.ToPtr(imageID + "1")
+			_, err = resolver.ResolveNodeImageFromNodeClass(nodeClass, localDNSTestInstanceType("Standard_D4s_v3", 4, 16384))
+			expect.Expect(err).To(HaveOccurred())
 		})
 	}
 }

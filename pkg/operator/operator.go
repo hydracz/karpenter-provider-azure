@@ -203,6 +203,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NodeImageVersionsClient,
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
+		azClient.GalleryImagesClient,
 	)
 	quotaProvider := quota.NewProvider(azClient.UsageClient, azClient.QuotaCategoryVMFamilyMappingClient, azConfig.Location)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
