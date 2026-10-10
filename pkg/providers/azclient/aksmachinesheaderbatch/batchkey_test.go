@@ -255,3 +255,41 @@ func TestMachineKeyFunc_RealisticMachinesDifferentConfigsSplit(t *testing.T) {
 		})
 	}
 }
+
+func TestMachineKeyFunc_SpotMaxPrice(test *testing.T) {
+	test.Parallel()
+
+	payload := func(price *float32, vmSize string) aksMachineCreatePayload {
+		properties := realisticMachineProps(vmSize, "nc-0")
+		properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
+		if price != nil {
+			properties.Billing = &armcontainerservice.MachineBillingProfile{SpotMaxPrice: price}
+		}
+		return aksMachineCreatePayload{machineBody: &armcontainerservice.Machine{Properties: properties}}
+	}
+	base := payload(lo.ToPtr(float32(0.03)), "Standard_D4s_v3")
+	baseKey := mustDetermineBatchKey(test, &base)
+
+	for _, testCase := range []struct {
+		name    string
+		price   *float32
+		vmSize  string
+		sameKey bool
+	}{
+		{name: "same price batches together", price: lo.ToPtr(float32(0.03)), vmSize: "Standard_D4s_v3", sameKey: true},
+		{name: "different price splits", price: lo.ToPtr(float32(0.04)), vmSize: "Standard_D4s_v3"},
+		{name: "zero price splits", price: lo.ToPtr(float32(0)), vmSize: "Standard_D4s_v3"},
+		{name: "explicit default splits", price: lo.ToPtr(float32(-1)), vmSize: "Standard_D4s_v3"},
+		{name: "unset price splits", vmSize: "Standard_D4s_v3"},
+		{name: "same price and different size splits", price: lo.ToPtr(float32(0.03)), vmSize: "Standard_D8s_v3"},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			expect := gomega.NewWithT(test)
+			item := payload(testCase.price, testCase.vmSize)
+			expect.Expect(mustDetermineBatchKey(test, &item) == baseKey).To(gomega.Equal(testCase.sameKey))
+			shared := buildSharedAKSMachineTemplate(item.machineBody)
+			expect.Expect(shared.Properties.Billing).To(gomega.Equal(item.machineBody.Properties.Billing))
+		})
+	}
+}

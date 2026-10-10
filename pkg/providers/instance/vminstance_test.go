@@ -35,6 +35,86 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 )
 
+func TestParseSpotMaxPriceAnnotation(test *testing.T) {
+	test.Parallel()
+
+	testCases := []struct {
+		name        string
+		annotations map[string]string
+		expected    *float64
+		wantErr     bool
+	}{
+		{name: "nil annotations"},
+		{name: "unrelated annotation", annotations: map[string]string{"example.com/other": "value"}},
+		{name: "default", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "-1"}, expected: lo.ToPtr(float64(-1))},
+		{name: "zero", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "0"}, expected: lo.ToPtr(float64(0))},
+		{name: "custom price", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "0.0321"}, expected: lo.ToPtr(0.0321)},
+		{name: "whitespace", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: " 0.0321 "}, expected: lo.ToPtr(0.0321)},
+		{name: "empty", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: ""}, wantErr: true},
+		{name: "only whitespace", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "   "}, wantErr: true},
+		{name: "negative fraction", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "-0.1"}, wantErr: true},
+		{name: "negative integer", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "-2"}, wantErr: true},
+		{name: "not a number", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "abc"}, wantErr: true},
+		{name: "NaN", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "NaN"}, wantErr: true},
+		{name: "positive infinity", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "+Inf"}, wantErr: true},
+		{name: "negative infinity", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "-Inf"}, wantErr: true},
+		{name: "overflow", annotations: map[string]string{v1beta1.AnnotationSpotMaxPrice: "1e309"}, wantErr: true},
+	}
+
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			expect := NewWithT(test)
+			value, err := parseSpotMaxPriceAnnotation(testCase.annotations)
+			if testCase.wantErr {
+				expect.Expect(err).To(HaveOccurred())
+				return
+			}
+			expect.Expect(err).NotTo(HaveOccurred())
+			expect.Expect(value).To(Equal(testCase.expected))
+		})
+	}
+}
+
+func TestVMSpotBillingProfile(test *testing.T) {
+	test.Parallel()
+
+	testCases := []struct {
+		name         string
+		capacityType string
+		maxPrice     *float64
+		expected     *float64
+	}{
+		{name: "spot defaults to -1", capacityType: karpv1.CapacityTypeSpot, expected: lo.ToPtr(float64(-1))},
+		{name: "spot custom price", capacityType: karpv1.CapacityTypeSpot, maxPrice: lo.ToPtr(0.0321), expected: lo.ToPtr(0.0321)},
+		{name: "spot zero price", capacityType: karpv1.CapacityTypeSpot, maxPrice: lo.ToPtr(float64(0)), expected: lo.ToPtr(float64(0))},
+		{name: "on-demand ignores price", capacityType: karpv1.CapacityTypeOnDemand, maxPrice: lo.ToPtr(0.0321)},
+	}
+
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			expect := NewWithT(test)
+			vm := newVMObject(&createVMOptions{
+				Zone:           "eastus2-1",
+				NodeClass:      &v1beta1.AKSNodeClass{},
+				InstanceType:   &cloudprovider.InstanceType{Name: "Standard_D4s_v5"},
+				LaunchTemplate: &launchtemplate.Template{},
+				CapacityType:   testCase.capacityType,
+				SpotMaxPrice:   testCase.maxPrice,
+			})
+			if testCase.expected == nil {
+				expect.Expect(vm.Properties.BillingProfile).To(BeNil())
+				expect.Expect(vm.Properties.EvictionPolicy).To(BeNil())
+				return
+			}
+			expect.Expect(vm.Properties.BillingProfile).NotTo(BeNil())
+			expect.Expect(vm.Properties.BillingProfile.MaxPrice).To(Equal(testCase.expected))
+			expect.Expect(vm.Properties.EvictionPolicy).To(Equal(lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)))
+		})
+	}
+}
+
 func TestVMFIPS1403EncryptionPayload(t *testing.T) {
 	for _, fips := range []bool{false, true} {
 		for _, ultraSSD := range []bool{false, true} {
