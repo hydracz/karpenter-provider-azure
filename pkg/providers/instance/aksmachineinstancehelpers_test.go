@@ -221,6 +221,16 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	Context("configureNetwork", func() {
 		const prefixID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"
 
+		It("should preserve legacy public IP enablement and existing Machine validation", func() {
+			nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+			network := configureNetwork(nodeClass)
+			Expect(network.EnableNodePublicIP).To(Equal(lo.ToPtr(true)))
+			Expect(network.NodePublicIPPrefixID).To(BeNil())
+			Expect(network.NodePublicIPTags).To(BeNil())
+			machine := &armcontainerservice.Machine{Properties: &armcontainerservice.MachineProperties{Network: network}}
+			Expect(validateExistingAKSMachineNodePublicIP(machine, nodeClass)).To(Succeed())
+		})
+
 		DescribeTable("should leave the public IP fields unset when node public IP is disabled",
 			func(nodePublicIP *v1beta1.NodePublicIP) {
 				nodeClass.Spec.NodePublicIP = nodePublicIP

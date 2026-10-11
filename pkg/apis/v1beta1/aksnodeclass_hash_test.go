@@ -126,6 +126,24 @@ var _ = Describe("Hash", func() {
 		Entry("GPU.Nvidia.ManagementMode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{GPU: &v1beta1.GPU{Nvidia: &v1beta1.NvidiaGPU{ManagementMode: lo.ToPtr(v1beta1.ManagementModeManaged)}}}}),
 		Entry("NodePublicIP.Enabled", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{NodePublicIP: &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}}}),
 	)
+	It("should preserve the hash for disabled public IPs and change it when enabled", func() {
+		hash := nodeClass.Hash()
+		nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(false)
+		Expect(nodeClass.Hash()).To(Equal(hash))
+		nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+		Expect(nodeClass.Hash()).NotTo(Equal(hash))
+	})
+	It("should ignore the legacy public IP field when an upstream block is present", func() {
+		for _, configuration := range []*v1beta1.NodePublicIP{{}, {Enabled: lo.ToPtr(false)}, {Enabled: lo.ToPtr(true)}} {
+			nodeClass.Spec.NodePublicIP = configuration
+			nodeClass.Spec.EnableNodePublicIP = nil
+			hash := nodeClass.Hash()
+			nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+			Expect(nodeClass.Hash()).To(Equal(hash))
+			nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(false)
+			Expect(nodeClass.Hash()).To(Equal(hash))
+		}
+	})
 	Context("NodePublicIP", func() {
 		const (
 			prefixID      = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"

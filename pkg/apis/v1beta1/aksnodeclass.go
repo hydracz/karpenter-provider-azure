@@ -164,6 +164,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
+	// enableNodePublicIP allocates a dedicated Standard IPv4 address for each node.
+	// Defaults to false. Existing NSG rules still apply; no inbound rules are opened.
+	// Public IP and outbound data transfer charges apply. NAT Gateway or route overrides may take precedence.
+	// Deprecated: use nodePublicIP.enabled. An explicit nodePublicIP block takes precedence.
+	// +optional
+	EnableNodePublicIP *bool `json:"enableNodePublicIP,omitempty"`
 	// capacityReservation configures the Capacity Reservation Group that instances
 	// provisioned by this NodeClass target.
 	// +optional
@@ -996,6 +1002,7 @@ const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	spec := in.Spec.DeepCopy()
+	normalizeNodePublicIPHash(spec)
 	if spec.CapacityReservation != nil {
 		spec.CapacityReservation.GroupID = lo.ToPtr(strings.ToLower(lo.FromPtr(spec.CapacityReservation.GroupID)))
 	}
@@ -1014,6 +1021,17 @@ func (in *AKSNodeClass) Hash() string {
 		lo.FromPtr(spec.GPU.Nvidia.ManagementMode) == ManagementModeUnmanaged) {
 		spec.GPU.Nvidia = nil
 	}
+	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
+		SlicesAsSets:    true,
+		IgnoreZeroValue: true,
+		ZeroNil:         true,
+	})))
+}
+
+func normalizeNodePublicIPHash(spec *AKSNodeClassSpec) {
+	if spec.NodePublicIP != nil || !lo.FromPtr(spec.EnableNodePublicIP) {
+		spec.EnableNodePublicIP = nil
+	}
 	// A disabled node public IP block requests nothing, so omitted, {}, and {enabled: false} must
 	// hash the same. ARM resource IDs are case-insensitive, so prefix ID casing must not drift nodes.
 	// IP tag values keep their casing; CEL keeps entries unique, so none cancel out as a set.
@@ -1029,11 +1047,6 @@ func (in *AKSNodeClass) Hash() string {
 			spec.NodePublicIP.IPTags = nil
 		}
 	}
-	return fmt.Sprint(lo.Must(hashstructure.Hash(spec, hashstructure.FormatV2, &hashstructure.HashOptions{
-		SlicesAsSets:    true,
-		IgnoreZeroValue: true,
-		ZeroNil:         true,
-	})))
 }
 
 // AKSNodeClassList contains a list of AKSNodeClass
@@ -1063,15 +1076,18 @@ func (in *AKSNodeClass) GetCapacityReservationGroupID() string {
 }
 
 // IsNodePublicIPEnabled returns whether nodes from this NodeClass request a public IP address.
-// Returns false when nodePublicIP or nodePublicIP.enabled is nil.
+// An explicit nodePublicIP block takes precedence over the legacy enableNodePublicIP field.
 func (in *AKSNodeClass) IsNodePublicIPEnabled() bool {
-	return in.Spec.NodePublicIP != nil && lo.FromPtr(in.Spec.NodePublicIP.Enabled)
+	if in.Spec.NodePublicIP != nil {
+		return lo.FromPtr(in.Spec.NodePublicIP.Enabled)
+	}
+	return lo.FromPtr(in.Spec.EnableNodePublicIP)
 }
 
 // GetNodePublicIPPrefixIDs returns the public IP prefix IDs that node public IP addresses are
 // allocated from. Returns nil when node public IP is disabled or no prefix is configured.
 func (in *AKSNodeClass) GetNodePublicIPPrefixIDs() []string {
-	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.PrefixIDs) == 0 {
+	if in.Spec.NodePublicIP == nil || !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.PrefixIDs) == 0 {
 		return nil
 	}
 	return in.Spec.NodePublicIP.PrefixIDs
@@ -1080,7 +1096,7 @@ func (in *AKSNodeClass) GetNodePublicIPPrefixIDs() []string {
 // GetNodePublicIPTags returns the IP tags for node public IP addresses.
 // Returns nil when node public IP is disabled or no IP tags are configured.
 func (in *AKSNodeClass) GetNodePublicIPTags() []IPTag {
-	if !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.IPTags) == 0 {
+	if in.Spec.NodePublicIP == nil || !in.IsNodePublicIPEnabled() || len(in.Spec.NodePublicIP.IPTags) == 0 {
 		return nil
 	}
 	return in.Spec.NodePublicIP.IPTags
