@@ -15,6 +15,12 @@ elif [[ $# -eq 3 ]]; then
   exit 1
 fi
 cd "$(git rev-parse --show-toplevel)"
+: "${IMAGE_REPOSITORY:?Set IMAGE_REPOSITORY to the controller image repository}"
+: "${IMAGE_TAG:?Set IMAGE_TAG to the controller version tag}"
+: "${IMAGE_DIGEST:?Set IMAGE_DIGEST to the matching published digest}"
+[[ "$IMAGE_REPOSITORY" != *"://"* && "$IMAGE_REPOSITORY" != *"@"* && "$IMAGE_REPOSITORY" != *[[:space:]]* ]]
+[[ "$IMAGE_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]
+[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 for tool in az jq helm yq node zip kubectl; do command -v "$tool" >/dev/null; done
 SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID:-$(az account show --query id --output tsv)}
 NAMESPACE=${KARPENTER_NAMESPACE:-kube-system}
@@ -23,13 +29,6 @@ REPLICAS=${CONTROLLER_REPLICAS:-1}
 TRANSPORT=${DEPLOY_TRANSPORT:-run-command}
 [[ "$TRANSPORT" == direct || "$TRANSPORT" == run-command ]]
 IDENTITY_NAME=${KARPENTER_IDENTITY_NAME:-id-karpenter-controller}
-IMAGE_TAG=${IMAGE_TAG:-v20261011-dev}
-if [[ "$IMAGE_TAG" != v20261011-dev && -z ${IMAGE_DIGEST:-} ]]; then
-  echo "Set IMAGE_DIGEST when selecting another IMAGE_TAG" >&2
-  exit 1
-fi
-IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:8f60eba2ddbec07f25455ced69a5858eabb029f3e5ed064fab0926a544a95c1f}
-[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 az_json() { az "$@" --subscription "$SUBSCRIPTION_ID" --output json; }
 aks=$(az_json aks show --resource-group "$RG" --name "$CLUSTER_NAME")
 jq -e '(.nodeProvisioningProfile.mode // "Manual") == "Manual" and .oidcIssuerProfile.enabled == true and .securityProfile.workloadIdentity.enabled == true and (.enableRbac != false)' <<< "$aks" >/dev/null || {
@@ -80,7 +79,7 @@ umask 077
 az aks get-credentials --subscription "$SUBSCRIPTION_ID" --resource-group "$RG" --name "$CLUSTER_NAME" --file "$directory/kubeconfig" --overwrite-existing --output none
 ca_certificate=$(kubectl --kubeconfig "$directory/kubeconfig" config view --raw -o json | jq -er '.clusters[0].cluster["certificate-authority-data"] | @base64d | rtrimstr("\n")')
 jq -n --argjson aks "$aks" --argjson identity "$identity" --argjson vnet "$vnet" \
-  --arg subnet "$subnet" --arg namespace "$NAMESPACE" --arg tag "$IMAGE_TAG" --arg digest "$IMAGE_DIGEST" \
+  --arg subnet "$subnet" --arg namespace "$NAMESPACE" --arg repository "$IMAGE_REPOSITORY" --arg tag "$IMAGE_TAG" --arg digest "$IMAGE_DIGEST" \
   --arg subscription "$SUBSCRIPTION_ID" --arg pool "$system_pool" --arg ca "$ca_certificate" --argjson adopt "$ADOPT_EXISTING" --argjson replicas "$REPLICAS" '
   {cluster:$aks.name, namespace:$namespace, release:"karpenter", crdRelease:"karpenter-crd", adopt:$adopt,
    caCertificate:$ca,
@@ -88,7 +87,7 @@ jq -n --argjson aks "$aks" --argjson identity "$identity" --argjson vnet "$vnet"
   values:{replicas:$replicas, nodeSelector:{"kubernetes.azure.com/agentpool":$pool},
      serviceAccount:{create:true,name:"karpenter-sa",annotations:{"azure.workload.identity/client-id":$identity.clientId}},
      podLabels:{"azure.workload.identity/use":"true"}, settings:{computeRecommendationMode:"disabled"},
-     controller:{image:{repository:"quay.io/hydracz/karpenter-controller",tag:$tag,digest:$digest},
+    controller:{image:{repository:$repository,tag:$tag,digest:$digest},
        resources:{requests:{cpu:"500m",memory:"768Mi"},limits:{cpu:"1",memory:"2Gi"}},env:
        ([{name:"KUBELET_BOOTSTRAP_TOKEN",valueFrom:{secretKeyRef:{name:"karpenter-bootstrap",key:"token"}}},
          {name:"SSH_PUBLIC_KEY",valueFrom:{secretKeyRef:{name:"karpenter-bootstrap",key:"sshPublicKey"}}}] +

@@ -67,6 +67,16 @@ helm() {
   esac
 }
 export -f kubectl helm
+for missing in IMAGE_REPOSITORY IMAGE_TAG IMAGE_DIGEST; do
+  export IMAGE_REPOSITORY=registry.example/team/controller IMAGE_TAG=test-version
+  IMAGE_DIGEST="sha256:$(printf '%064d' 0)"
+  export IMAGE_DIGEST
+  exit_code=0
+  output=$(env -u "$missing" "$BASH" "$SCRIPT_DIR/helm-existing-aks.sh" test-rg test-cluster 2>&1) || exit_code=$?
+  [[ "$exit_code" != 0 && "$output" == *"$missing"* && ! -s "$MOCK_LOG" ]] || { printf '%s\n' "$output"; exit 1; }
+  printf 'PASS missing %s rejected before Azure access\n' "$missing"
+done
+unset IMAGE_REPOSITORY IMAGE_TAG IMAGE_DIGEST
 printf '%s\n' '[{"kind":"Deployment","metadata":{"name":"karpenter","namespace":"kube-system"}}]' > "$directory/controller-resources.json"
 printf '%s\n' '[{"kind":"CustomResourceDefinition","metadata":{"name":"aksnodeclasses.karpenter.azure.com"}}]' > "$directory/crd-resources.json"
 cd "$directory"

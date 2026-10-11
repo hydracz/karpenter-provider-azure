@@ -4,11 +4,18 @@
 
 Use a checkout containing the controller-matched chart and generated CRDs. With
 Azure CLI already logged in and the intended subscription selected, provide only
-the resource group and cluster name:
+the resource group and cluster name after selecting the controller image once:
 
 ```bash
+export IMAGE_REPOSITORY=quay.io/hydracz/karpenter-controller
+export IMAGE_TAG=v20261011-dev
+export IMAGE_DIGEST=sha256:8f60eba2ddbec07f25455ced69a5858eabb029f3e5ed064fab0926a544a95c1f
 bash hack/deploy/helm-existing-aks.sh rg-demo aks-demo
 ```
+
+All three image values are required; no repository, tag or digest is built into
+the installer. They can be exported by a reviewed deployment environment file.
+When changing registries or versions, select the matching digest explicitly.
 
 For the existing manually applied installation in the validation cluster, the
 first deployment explicitly adopts its reviewed resources:
@@ -33,7 +40,7 @@ Only `aksscriptless` self-hosted provisioning is configured by this helper.
   and assign the required roles in the node resource group.
 - For the default private-cluster path: permission to execute/read AKS Run Command;
   its execution Pod needs Helm, kubectl, jq, and sufficient system capacity.
-- A public/readable Quay image, or separately configured Kubernetes image-pull access.
+- A readable controller image in the configured registry, or separately configured image-pull access.
 
 The helper refuses missing OIDC/Workload Identity rather than changing cluster
 settings implicitly. An administrator can enable them separately after review:
@@ -69,7 +76,7 @@ guess among multiple managed AKS subnets. Optional overrides are:
 | `NODE_SUBNET_ID` | Uniquely discovered pool/managed AKS subnet |
 | `CONTROLLER_REPLICAS` | `1` for bounded development use |
 | `DEPLOY_TRANSPORT` | `run-command`; use `direct` with API network access |
-| `IMAGE_TAG` / `IMAGE_DIGEST` | Pinned `v20261011-dev` and its verified digest |
+| `IMAGE_REPOSITORY` / `IMAGE_TAG` / `IMAGE_DIGEST` | Required image selection, no implicit defaults |
 
 For availability outside a small test environment, use two controller replicas
 and sufficient system nodes to satisfy the chart's required pod anti-affinity.
@@ -106,11 +113,11 @@ for that backup.
 
 ## Upgrade and Verify
 
-To select another published image, supply both its tag and digest. This prevents
+To select another published image, supply its repository, tag and digest. This prevents
 accidentally retaining the old digest when only a tag changes:
 
 ```bash
-IMAGE_TAG=v20261011-dev2 IMAGE_DIGEST=sha256:<published-digest> \
+IMAGE_REPOSITORY=<registry/repository> IMAGE_TAG=v20261011-dev2 IMAGE_DIGEST=sha256:<published-digest> \
   bash hack/deploy/helm-existing-aks.sh rg-demo aks-demo
 ```
 
