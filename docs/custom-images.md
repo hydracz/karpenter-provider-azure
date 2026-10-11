@@ -13,6 +13,11 @@ support for arbitrary AKS OS modifications.
 
 ## Requirements
 
+For a complete Ubuntu22.04 workflow, choose either
+[unbooted disk copying or disposable-VM software installation](ubuntu2204-custom-image.md).
+Both converge on the same Gallery publication, permissions and node public-IP
+configuration. A VM is not required merely to keep a private copy of an AKS CIG.
+
 - A generalized Linux image, never a captured node from an existing cluster.
 - Explicit `imageFamily`: `Ubuntu2204`, `Ubuntu2404`, or `AzureLinux`, matching the
   source distribution. Match the source image to the node Kubernetes version.

@@ -1,5 +1,35 @@
 # Custom Image and Public IP Validation
 
+## Ubuntu2204 Unbooted Image Validation
+
+On 2026-10-11, official CIG `2204gen2containerd/202610.08.0` was copied directly
+to an unattached Gen2 Linux disk using `creationData.galleryImageReference.communityGalleryImageId`.
+No builder VM was created or booted. The disk retained x64/SCSI/NVMe capabilities;
+Gallery `karpenterValidation/aksUbuntu2204Gen2/1.0.0` reached Succeeded with
+eastus2 replication Completed/100%. This is an unmodified private AKS baseline,
+not a software-customized image or a guarantee of no state in the official source.
+
+Run Command `30974235bebc4882a31dd17ec012ee6b` returned exit code 0: node
+`aks-ubuntu2204-public-bgt7q` reported Ubuntu22.04.5, Kubernetes1.35.8 and Ready;
+the probe ran successfully and observed `20.186.114.205`, matching its ExternalIP.
+Independent Azure checks verified the exact custom Gallery ID, NVMe controller,
+NvmeDisk ephemeral placement, NSG and Standard/static public IP, and no outbound-rule
+pool binding. Cleanup `a39493d90dbd4782bd9b563a35ec6b48` returned exit code 0;
+VM/NIC/disk/public-IP absence was independently verified. The source disk was
+deleted after full image replication. The image and NodeClass remain; the
+`ubuntu2204-public` pool is paused at CPU0.
+
+The Helm installer now requires configurable `IMAGE_REPOSITORY`, `IMAGE_TAG`, and
+`IMAGE_DIGEST`, with no built-in Quay address or dated image default. Missing-value
+tests and the seven deployment safety cases pass. Explicit image deployment
+`5b9a686752df45a78e2c5b1e01e674bf` returned exit code 0; both Helm releases are
+revision3/deployed and the controller remains 1/1 Running. This supersedes the
+revision2 statements in historical sections below.
+
+See [the complete two-method Ubuntu2204 guide](ubuntu2204-custom-image.md).
+Method A was executed here; method B explains disposable-VM software installation
+and generalization. Advanced offline package modification was not performed.
+
 ## Quay Image Helm Validation (2026-10-11)
 
 The private `aks-karpenter-validation` cluster now runs
