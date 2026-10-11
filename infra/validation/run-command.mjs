@@ -7,8 +7,8 @@ const [action, input, ...files] = process.argv.slice(2);
 const subscription = process.env.AZURE_SUBSCRIPTION_ID;
 const resourceGroup = process.env.AZURE_RESOURCE_GROUP;
 const cluster = process.env.CLUSTER_NAME;
-if (!subscription || !resourceGroup || !cluster || !input || !['start', 'result'].includes(action)) {
-  throw new Error('Set AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, CLUSTER_NAME; use start request.json [files...] or result command-id');
+if (!subscription || !resourceGroup || !cluster || !input || !['start', 'result', 'wait'].includes(action)) {
+  throw new Error('Set AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, CLUSTER_NAME; use start request.json [files...] or result/wait command-id');
 }
 const clusterURL = `https://management.azure.com/subscriptions/${encodeURIComponent(subscription)}/resourceGroups/${encodeURIComponent(resourceGroup)}/providers/Microsoft.ContainerService/managedClusters/${encodeURIComponent(cluster)}`;
 const stateDirectory = join(tmpdir(), 'karpenter-run-command-state');
@@ -56,15 +56,22 @@ if (action === 'start') {
     if (saved.clusterURL !== clusterURL) throw new Error('Command belongs to a different cluster');
     resultURL = saved.resultURL;
   }
-  const response = azure(['--method', 'get', '--url', resultURL]);
-  const result = JSON.parse(response.stdout);
-  console.log(JSON.stringify(result.properties ?? result, null, 2));
-  const properties = result.properties ?? result;
-  if (properties.provisioningState === 'Succeeded' && properties.exitCode === 0) {
-    process.exitCode = 0;
-  } else if (properties.provisioningState === 'Failed' || (properties.exitCode !== undefined && properties.exitCode !== 0)) {
-    process.exitCode = 1;
-  } else {
-    process.exitCode = 2;
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (true) {
+    const response = azure(['--method', 'get', '--url', resultURL]);
+    const result = JSON.parse(response.stdout);
+    const properties = result.properties ?? result;
+    const exitCode = properties.provisioningState === 'Succeeded' && properties.exitCode === 0
+      ? 0
+      : properties.provisioningState === 'Failed' || (properties.exitCode !== undefined && properties.exitCode !== 0)
+        ? 1 : 2;
+    if (action === 'result' || exitCode !== 2) {
+      console.log(JSON.stringify(properties, null, 2));
+      process.exitCode = exitCode;
+      break;
+    }
+    if (Date.now() >= deadline) throw new Error(`Run Command ${input} did not finish within 20 minutes`);
+    console.log(`Run Command ${input}: ${properties.provisioningState ?? 'pending'}`);
+    await new Promise(resolve => setTimeout(resolve, 15000));
   }
 }

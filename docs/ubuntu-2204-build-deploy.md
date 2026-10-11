@@ -1,5 +1,10 @@
 # Build and Deploy a Self-Hosted Controller
 
+For the shortest deployment path to an existing AKS cluster, use the
+[two-input Helm deployment guide](helm-existing-aks.md). It discovers Azure
+configuration, keeps bootstrap credentials in-cluster, and supports private
+clusters through Run Command. The manual build/setup steps below remain available.
+
 This guide preserves the fork's Ubuntu 22.04 build and existing-cluster deployment
 workflow using the current upstream APIs. Ubuntu 22.04 here is the build host;
 the node image family is configured independently in AKSNodeClass.
