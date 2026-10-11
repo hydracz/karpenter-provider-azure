@@ -8,6 +8,33 @@ Commands that publish images, configure identity, or install charts change real
 resources. Run them only against a reviewed development subscription and cluster.
 The porting validation does not execute those deployment commands.
 
+## Quay AMD64 Development Images
+
+Publish self-hosted Linux x64 images to `quay.io/hydracz/karpenter-controller`
+with `bash hack/release/publish-quay.sh`. Install `ko`, Docker, `curl`, and `jq`,
+and authenticate with `docker login quay.io` directly in your terminal first.
+Never put registry credentials in scripts or committed files.
+
+Development tags follow the existing `vYYYYMMDD-dev` convention using the UTC
+release date. Subsequent releases on the same date use `dev2`, `dev3`, and so on;
+existing tags are never overwritten. Each image also receives the full Git commit
+SHA tag and OCI revision/version labels. No `latest` tag is published. The embedded
+controller version matches the development tag; use the published digest for Helm.
+
+```bash
+IMAGE_TAG=v20261011-dev bash hack/release/publish-quay.sh
+# A later release on the same date:
+IMAGE_TAG=v20261011-dev2 bash hack/release/publish-quay.sh
+```
+
+The script requires committed sources, builds a local tarball, verifies
+`linux/amd64`, and runs the controller's `--help` before pushing both tags.
+Set `BUILD_ONLY=true` to stop after the local checks. Tarballs are ignored under
+`dist/quay/`. This independent build uses the pinned Azure Linux base and
+`CGO_ENABLED=0` for portable compilation on macOS or Linux. It is a non-FIPS
+development image, not a certification of the upstream CGO-enabled release build;
+the upstream multi-architecture release settings remain unchanged.
+
 ## Build and Test
 
 Use the Go version required by [go.mod](../go.mod), with `GOTOOLCHAIN=auto` if
