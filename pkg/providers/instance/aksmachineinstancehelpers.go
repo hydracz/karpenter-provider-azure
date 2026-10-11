@@ -65,6 +65,10 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("NodeClaim is not set")
 	}
 
+	if nodeClass.Spec.ImageID != nil {
+		return nil, fmt.Errorf("imageID is not supported in provision mode %q", options.FromContext(ctx).ProvisionMode)
+	}
+
 	billingProfile, err := configureAKSMachineBillingProfile(nodeClaim, capacityType)
 	if err != nil {
 		return nil, err

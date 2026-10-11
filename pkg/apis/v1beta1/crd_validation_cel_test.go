@@ -93,6 +93,32 @@ var _ = Describe("CEL/Validation", func() {
 			},
 		}
 	})
+	Context("imageID", func() {
+		const imageID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/ubuntu/versions/1.0.0"
+		DescribeTable("should accept only explicit fixed Gallery image versions", func(id, family string, versions *v1beta1.Versions, valid bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{ImageID: &id, ImageFamily: &family, Versions: versions},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if valid {
+				Expect(err).NotTo(HaveOccurred())
+				stored := &v1beta1.AKSNodeClass{}
+				Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), stored)).To(Succeed())
+				Expect(stored.Spec.ImageID).To(Equal(&id))
+			} else {
+				Expect(err).To(HaveOccurred())
+			}
+		},
+			Entry("fixed Ubuntu2204", imageID, v1beta1.Ubuntu2204ImageFamily, nil, true),
+			Entry("fixed Ubuntu2404", imageID, v1beta1.Ubuntu2404ImageFamily, nil, true),
+			Entry("latest is not immutable", strings.ReplaceAll(imageID, "1.0.0", "latest"), v1beta1.Ubuntu2204ImageFamily, nil, false),
+			Entry("image definition is not a version", strings.TrimSuffix(imageID, "/versions/1.0.0"), v1beta1.Ubuntu2204ImageFamily, nil, false),
+			Entry("generic Ubuntu is ambiguous", imageID, v1beta1.UbuntuImageFamily, nil, false),
+			Entry("node version pin is exclusive", imageID, v1beta1.Ubuntu2204ImageFamily, &v1beta1.Versions{KubernetesVersion: lo.ToPtr("1.35.0"), NodeImageVersion: lo.ToPtr("202609.15.0")}, false),
+		)
+	})
+
 	Context("Kubelet overrides", func() {
 		DescribeTable("should validate kubeReserved", func(kubeReserved *v1beta1.KubeReserved, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{

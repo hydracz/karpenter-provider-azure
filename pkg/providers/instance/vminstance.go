@@ -690,7 +690,7 @@ func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProp
 
 // setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
 func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageID string, useSIG bool) {
-	if useSIG {
+	if useSIG || strings.HasPrefix(strings.ToLower(imageID), "/subscriptions/") {
 		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
 			ID: lo.ToPtr(imageID),
 		}

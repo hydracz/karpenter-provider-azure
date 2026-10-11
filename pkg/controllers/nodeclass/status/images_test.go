@@ -17,6 +17,7 @@ limitations under the License.
 package status_test
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -201,6 +202,33 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			expectedImages: getExpectedTestSIGImages,
 		},
 	}
+
+	Context("Custom image status", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			test.ApplyDefaultStatus(nodeClass, env, false)
+			nodeClass.Spec.ImageID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/ubuntu/versions/1.0.0")
+		})
+		It("should immediately follow the configured image version", func() {
+			reconciler := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "")
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(nodeClass.Status.Images).To(HaveLen(1))
+			Expect(nodeClass.Status.Images[0].ID).To(Equal(*nodeClass.Spec.ImageID))
+			Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
+			nodeClass.Spec.ImageID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/ubuntu/versions/2.0.0")
+			_, err = reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(nodeClass.Status.Images[0].ID).To(Equal(*nodeClass.Spec.ImageID))
+		})
+		It("should clear stale images and readiness after a gallery failure", func() {
+			azureEnv.ComputeGalleryImagesAPI.Error = fmt.Errorf("gallery access denied")
+			_, err := status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, "").Reconcile(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			Expect(nodeClass.Status.Images).To(BeEmpty())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
+		})
+	})
 
 	for _, testCase := range testCases {
 

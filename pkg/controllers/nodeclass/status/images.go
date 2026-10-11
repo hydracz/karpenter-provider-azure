@@ -116,6 +116,10 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 
+	if nodeClass.Spec.ImageID != nil {
+		return r.reconcileCustomImage(ctx, nodeClass)
+	}
+
 	// validate FIPS + useSIG
 	useSIG := options.FromContext(ctx).UseSIG
 	if nodeClass.IsFIPSEnabled() && !useSIG {
@@ -137,23 +141,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
-		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
-			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
-		})
-
-		// sorted for consistency
-		sort.Slice(reqs, func(i, j int) bool {
-			if len(reqs[i].Key) != len(reqs[j].Key) {
-				return len(reqs[i].Key) < len(reqs[j].Key)
-			}
-			return reqs[i].Key < reqs[j].Key
-		})
-		return v1beta1.NodeImage{
-			ID:           nodeImage.ID,
-			Requirements: reqs,
-		}
-	})
+	goalImages := nodeImageStatus(nodeImages)
 
 	latestImageVersion := ""
 	if len(goalImages) > 0 {
@@ -221,6 +209,39 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
+}
+
+func (r *NodeImageReconciler) reconcileCustomImage(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
+	if err == nil && len(nodeImages) != 1 {
+		err = fmt.Errorf("imageID must resolve to exactly one compatible image")
+	}
+	if nodeClass.Status.ObservedVersions != nil {
+		nodeClass.Status.ObservedVersions.LatestImageVersion = nil
+	}
+	if err != nil {
+		nodeClass.Status.Images = nil
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "CustomImageError", err.Error())
+		return reconcile.Result{RequeueAfter: requeueTime}, err
+	}
+	nodeClass.Status.Images = nodeImageStatus(nodeImages)
+	nodeClass.StatusConditions().SetTrueWithReason(v1beta1.ConditionTypeImagesReady, "CustomImageResolved", "Using the configured Compute Gallery image version")
+	return reconcile.Result{RequeueAfter: requeueTime}, nil
+}
+
+func nodeImageStatus(nodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
+	return lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
+		requirements := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
+			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
+		})
+		sort.Slice(requirements, func(left, right int) bool {
+			if len(requirements[left].Key) != len(requirements[right].Key) {
+				return len(requirements[left].Key) < len(requirements[right].Key)
+			}
+			return requirements[left].Key < requirements[right].Key
+		})
+		return v1beta1.NodeImage{ID: nodeImage.ID, Requirements: requirements}
+	})
 }
 
 // Handles case 4: check if the maintenance window is open
