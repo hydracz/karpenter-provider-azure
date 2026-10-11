@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -62,6 +63,11 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 	if nodeClaim == nil {
 		return nil, fmt.Errorf("NodeClaim is not set")
+	}
+
+	billingProfile, err := configureAKSMachineBillingProfile(nodeClaim, capacityType)
+	if err != nil {
+		return nil, err
 	}
 
 	// NodeImageVersion
@@ -159,12 +165,30 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				EnableSecureBoot:       lo.ToPtr(nodeClass.IsSecureBootEnabled()),
 			},
 			Priority: priority,
+			Billing:  billingProfile,
 
 			Tags:                tags,
 			LocalDNSProfile:     configureLocalDNSProfile(nodeClass, instanceType),
 			CapacityReservation: configureCapacityReservation(nodeClass),
 		},
 	}, nil
+}
+
+func configureAKSMachineBillingProfile(nodeClaim *karpv1.NodeClaim, capacityType string) (*armcontainerservice.MachineBillingProfile, error) {
+	if capacityType != karpv1.CapacityTypeSpot {
+		return nil, nil
+	}
+	maxPrice, err := parseSpotMaxPriceAnnotation(nodeClaim.Annotations)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: %w", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, err)
+	}
+	if maxPrice == nil {
+		return nil, nil
+	}
+	if *maxPrice > math.MaxFloat32 || (*maxPrice > 0 && float32(*maxPrice) == 0) {
+		return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: price %v is outside the float32 range supported by the AKS Machine API", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, *maxPrice)
+	}
+	return &armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(*maxPrice))}, nil
 }
 
 func configureNetwork(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineNetworkProperties {

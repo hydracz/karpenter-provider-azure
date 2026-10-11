@@ -281,6 +281,72 @@ func vmNodeOverlayCapacityTestOptions() nodeOverlayCapacityTestOptions {
 	}
 }
 
+func runSpotMaxPriceTests(provisionModes ...string) {
+	for _, provisionMode := range provisionModes {
+		Context("Spot max price "+provisionMode, func() {
+			BeforeEach(func() {
+				testOptions.ProvisionMode = provisionMode
+				ctx = options.ToContext(ctx, testOptions)
+				azureEnv = test.NewEnvironment(ctx, env)
+				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+				cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			})
+
+			DescribeTable("should apply the annotation only to spot requests",
+				func(raw *string, capacityType string, expected *float64, wantError bool) {
+					if raw != nil {
+						nodeClaim.Annotations = map[string]string{v1beta1.AnnotationSpotMaxPrice: *raw}
+					}
+					nodeClaim.Spec.Requirements = append(nodeClaim.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+						Key:      karpv1.CapacityTypeLabelKey,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{capacityType},
+					})
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool, nodeClaim)
+					_, err := CreateAndWaitForPromises(ctx, cloudProvider, azureEnv, nodeClaim)
+					if wantError {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(v1beta1.AnnotationSpotMaxPrice))
+						Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+						Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+						Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeZero())
+						return
+					}
+					Expect(err).NotTo(HaveOccurred())
+					if provisionMode == consts.ProvisionModeAKSMachineAPI || provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch {
+						Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+						profile := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop().AKSMachine.Properties.Billing
+						if expected == nil {
+							Expect(profile).To(BeNil())
+						} else {
+							Expect(profile).NotTo(BeNil())
+							Expect(profile.SpotMaxPrice).To(Equal(lo.ToPtr(float32(*expected))))
+						}
+						return
+					}
+					Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+					profile := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM.Properties.BillingProfile
+					if capacityType != karpv1.CapacityTypeSpot {
+						Expect(profile).To(BeNil())
+						return
+					}
+					Expect(profile).NotTo(BeNil())
+					maxPrice := float64(-1)
+					if expected != nil {
+						maxPrice = *expected
+					}
+					Expect(profile.MaxPrice).To(Equal(lo.ToPtr(maxPrice)))
+				},
+				Entry("default spot price", nil, karpv1.CapacityTypeSpot, nil, false),
+				Entry("custom spot price", lo.ToPtr("0.0321"), karpv1.CapacityTypeSpot, lo.ToPtr(0.0321), false),
+				Entry("invalid spot price", lo.ToPtr("invalid"), karpv1.CapacityTypeSpot, nil, true),
+				Entry("custom on-demand price is ignored", lo.ToPtr("0.0321"), karpv1.CapacityTypeOnDemand, nil, false),
+				Entry("invalid on-demand price is ignored", lo.ToPtr("invalid"), karpv1.CapacityTypeOnDemand, nil, false),
+			)
+		})
+	}
+}
+
 func runCapacityBufferTests(expectCreateCalls func(expectedCalls int)) {
 	Context("CapacityBuffer", func() {
 		It("should launch capacity for a PodTemplate-backed buffer", func() {
@@ -368,6 +434,7 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 
+		runSpotMaxPriceTests(consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
 		It("should reject managed GPU before creating a VM on an unsupported provision mode", func() {
 			nodeClass.Spec.GPU = &v1beta1.GPU{
 				Mode: lo.ToPtr(v1beta1.GPUModeDriver),

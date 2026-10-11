@@ -61,6 +61,36 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 		}
 	})
 
+	DescribeTable("configureAKSMachineBillingProfile",
+		func(capacityType string, annotations map[string]string, expected *float32, wantError bool) {
+			nodeClaim.Annotations = annotations
+			profile, err := configureAKSMachineBillingProfile(nodeClaim, capacityType)
+			if wantError {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(v1beta1.AnnotationSpotMaxPrice))
+				Expect(profile).To(BeNil())
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+			if expected == nil {
+				Expect(profile).To(BeNil())
+				return
+			}
+			Expect(profile).NotTo(BeNil())
+			Expect(profile.SpotMaxPrice).To(Equal(expected))
+		},
+		Entry("preserves the upstream default", karpv1.CapacityTypeSpot, nil, nil, false),
+		Entry("accepts explicit default", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "-1"}, lo.ToPtr(float32(-1)), false),
+		Entry("accepts zero", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "0"}, lo.ToPtr(float32(0)), false),
+		Entry("accepts a custom price", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "0.0321"}, lo.ToPtr(float32(0.0321)), false),
+		Entry("ignores invalid prices for on-demand", karpv1.CapacityTypeOnDemand, map[string]string{v1beta1.AnnotationSpotMaxPrice: "invalid"}, nil, false),
+		Entry("rejects invalid prices for spot", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "invalid"}, nil, true),
+		Entry("rejects negative prices", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "-0.1"}, nil, true),
+		Entry("rejects nonfinite prices", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "NaN"}, nil, true),
+		Entry("rejects float32 overflow", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "1e39"}, nil, true),
+		Entry("rejects float32 underflow", karpv1.CapacityTypeSpot, map[string]string{v1beta1.AnnotationSpotMaxPrice: "1e-50"}, nil, true),
+	)
+
 	Context("configureCapacityReservation", func() {
 		It("should omit the profile when no group is configured", func() {
 			Expect(configureCapacityReservation(nodeClass)).To(BeNil())
