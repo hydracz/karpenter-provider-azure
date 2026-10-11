@@ -53,6 +53,7 @@ type Template struct {
 	StorageProfileIsEphemeral bool
 	StorageProfilePlacement   armcompute.DiffDiskPlacement
 	StorageProfileSizeGB      int32
+	DiskControllerType        *armcompute.DiskControllerTypes
 }
 
 type Provider struct {
@@ -222,6 +223,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		StorageProfileIsEphemeral: params.StorageProfileIsEphemeral,
 		StorageProfilePlacement:   params.StorageProfilePlacement,
 		StorageProfileSizeGB:      params.StorageProfileSizeGB,
+		DiskControllerType:        params.DiskControllerType,
 	}
 
 	switch p.provisionMode {

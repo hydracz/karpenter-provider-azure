@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -755,6 +756,28 @@ func (p *DefaultProvider) Reset() {
 	p.muInstanceTypesCache.Lock()
 	p.instanceTypesCache.Flush()
 	p.muInstanceTypesCache.Unlock()
+}
+func GetDiskControllerType(sku *skewer.SKU) *armcompute.DiskControllerTypes {
+	if sku == nil {
+		return nil
+	}
+	controllers, err := sku.GetCapabilityString("DiskControllerTypes")
+	if err != nil {
+		return nil
+	}
+	supportsNVMe := false
+	for _, controller := range strings.Split(controllers, ",") {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(controller), string(armcompute.DiskControllerTypesSCSI)):
+			return nil
+		case strings.EqualFold(strings.TrimSpace(controller), string(armcompute.DiskControllerTypesNVMe)):
+			supportsNVMe = true
+		}
+	}
+	if supportsNVMe {
+		return lo.ToPtr(armcompute.DiskControllerTypesNVMe)
+	}
+	return nil
 }
 
 func ultraSSDOptions(sku *skewer.SKU, zone string) []string {

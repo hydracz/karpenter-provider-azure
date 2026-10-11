@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	//nolint:staticcheck // deprecated package used by skewer
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 	"github.com/Azure/skewer"
@@ -34,6 +35,37 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
+
+func TestGetDiskControllerType(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct {
+		name        string
+		controllers *string
+		expected    *armcompute.DiskControllerTypes
+	}{
+		{name: "missing capability"},
+		{name: "empty capability", controllers: lo.ToPtr("")},
+		{name: "NVMe only", controllers: lo.ToPtr("NVMe"), expected: lo.ToPtr(armcompute.DiskControllerTypesNVMe)},
+		{name: "SCSI only", controllers: lo.ToPtr("SCSI")},
+		{name: "SCSI and NVMe", controllers: lo.ToPtr("SCSI,NVMe")},
+		{name: "NVMe and SCSI", controllers: lo.ToPtr("NVMe,SCSI")},
+		{name: "case and whitespace", controllers: lo.ToPtr(" nvme "), expected: lo.ToPtr(armcompute.DiskControllerTypesNVMe)},
+		{name: "dual support with whitespace", controllers: lo.ToPtr(" nvme , scsi ")},
+		{name: "unknown controller", controllers: lo.ToPtr("NVMeV2")},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			sku := &skewer.SKU{}
+			if testCase.controllers != nil {
+				sku.Capabilities = &[]compute.ResourceSkuCapabilities{{
+					Name: lo.ToPtr("DiskControllerTypes"), Value: testCase.controllers,
+				}}
+			}
+			NewWithT(test).Expect(GetDiskControllerType(sku)).To(Equal(testCase.expected))
+		})
+	}
+	NewWithT(test).Expect(GetDiskControllerType(nil)).To(BeNil())
+}
 
 func TestKubeReservedResources(t *testing.T) {
 	tests := []struct {
