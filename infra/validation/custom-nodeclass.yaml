@@ -5,7 +5,8 @@ metadata:
 spec:
   imageFamily: Ubuntu2404
   imageID: ${CUSTOM_IMAGE_ID}
-  enableNodePublicIP: true
+  nodePublicIP:
+    enabled: true
   osDiskSizeGB: 128
   tags:
     Purpose: karpenter-live-validation

@@ -2,6 +2,30 @@
 
 These artifacts are for a dedicated test cluster, not an existing production
 cluster. Review resource names, region, quotas, permissions, and cost first.
+
+## Existing Cluster Upgrade
+
+For an existing cluster, use [the two-input Helm helper](../../docs/helm-existing-aks.md)
+instead of repeating the infrastructure deployment. The Quay `v20261011-dev`
+controller was installed and re-upgraded with both Helm releases at revision 2.
+The current healthy system pool is `valmgmt` (`Standard_D4ds_v6`); the former
+empty/failed `sys` pool was deleted after allocation was unavailable. Do not run
+the old `sys` scaling commands below blindly against this retained environment.
+
+The official/custom manifests now use `nodePublicIP.enabled`. Additional
+journeys are `test-default.sh` (default no IP / legacy boolean),
+`test-contracts.sh` (admission and VM prefix rejection), and `test-drift.sh`
+(published version1.0.1, drift, controlled replacement). Use the corresponding
+command JSON with `run-command.mjs start`, attach every referenced script/manifest,
+then `run-command.mjs wait <id>` to propagate the remote result. Before drift,
+publish the temporary Gallery1.0.1 from1.0.0; restore1.0.0 and delete1.0.1 after
+all worker VMs are removed. Keep one worker at a time and independently run
+`check-azure-node.sh deleted <name>` after each cleanup.
+
+Full current results, limitations and retained costs are in
+[the validation report](../../docs/runtime-validation-report.md). The pool is
+paused at CPU0 after testing; the controller remains deployed. Old setup steps
+below describe the initial environment, not an instruction to recreate it.
 Azure CLI authentication must be completed in your own terminal. Never put
 credentials, bootstrap tokens, or private keys in these files.
 

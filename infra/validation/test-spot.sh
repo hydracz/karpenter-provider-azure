@@ -14,4 +14,8 @@ fi
 node_name=$(kubectl -n validation get pod probe -o jsonpath='{.spec.nodeName}')
 test "$(kubectl get node "$node_name" -o jsonpath='{.metadata.labels.karpenter\.sh/capacity-type}')" = spot
 kubectl get nodeclaims -l karpenter.sh/nodepool=validation -o json | jq '{claims: [.items[] | {name:.metadata.name,providerID:.status.providerID,imageID:.status.imageID,capacityType:.metadata.labels["karpenter.sh/capacity-type"]}]}'
+marker=$(kubectl -n validation exec probe -- cat /host-image/build-marker)
+test "$marker" = custom-image-validation-20261011
+egress_ip=$(kubectl -n validation exec probe -- curl --fail --silent --show-error --connect-timeout 10 --max-time 30 https://api.ipify.org)
+printf 'BUILD_MARKER=%s\nEGRESS_IP=%s\n' "$marker" "$egress_ip"
 printf 'PASS Spot node ready; verify Azure billingProfile.maxPrice=0.10 separately\n'

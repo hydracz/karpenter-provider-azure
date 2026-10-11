@@ -1,5 +1,71 @@
 # Custom Image and Public IP Validation
 
+## Quay Image Helm Validation (2026-10-11)
+
+The private `aks-karpenter-validation` cluster now runs
+`quay.io/hydracz/karpenter-controller:v20261011-dev` pinned to
+`sha256:8f60eba2ddbec07f25455ced69a5858eabb029f3e5ed064fab0926a544a95c1f`
+(source `1542cf4947dbecc96f8344f09df4857cf6e64e7d`, Linux amd64/CGO disabled).
+This section supersedes the older deployment version/final-state statements below;
+the older sections remain historical evidence.
+
+The existing manually applied objects were reviewed and adopted into separate
+`karpenter` and `karpenter-crd` Helm releases. Install command
+`05b9853188af4acaa873f8e09aef1356` and ordinary repeat upgrade
+`c01c3c8a58554cfcb8a6b7678b9e470a` returned exit code 0. Both releases are
+revision 2/deployed; the controller is 1/1 Running with the pinned image.
+Bootstrap credentials remain in an in-cluster Secret, not Helm values. The final
+helper refreshes that Secret and triggers rollout using its resource version.
+Final check `61f9190dbd9f49c0add4f8da57613fcf` returned exit code 0 after the repeat
+upgrade: both revision-2 releases deployed, exact registry digest in the running
+container, zero restarts, one Ready system node, and an empty paused test pool.
+The separate node-RG query returned no `aks-validation*` resources.
+
+| Journey | Result / Evidence | Exit Code |
+| --- | --- | --- |
+| Helm install and repeat upgrade | PASS: matched CRDs first, pinned digest, controller ready | 0 |
+| Official CIG + new `nodePublicIP.enabled` | PASS: `c8593b200c864c2293e198ac652b75e0`, node `aks-validation-qlg9c`, egress `20.94.40.46` | 0 |
+| Custom Gallery + marker + direct egress | PASS: `7d1949432cdd4c51b4d94f431a5180be`, node `aks-validation-ch8qk`, version 1.0.0, marker `custom-image-validation-20261011`, egress `20.94.41.150` | 0 |
+| Explicit image update and controlled replacement | PASS: `c01f373008894daab8743a590a9178bf`, status resolves 1.0.1, old claim Drifted/NodeClassDrift, replacement `aks-validation-scrvm` ready with 1.0.1, egress `40.79.241.126` | 0 |
+| Spot ceiling with custom image | PASS: `037229b297a54cb6b001487d3210e99c`, node `aks-validation-48cvb`; Azure priority Spot, maxPrice 0.1, egress `172.206.65.242` | 0 |
+| Inaccessible image | PASS: `b368314464e0480fa6e5e2faec3ea45a`, Azure 403, ImagesReady false/CustomImageError, no fallback/claim | 0 |
+| Admission and mode restrictions | PASS: `01dbb966e8db4ac68f66ee508ca298c4`; rejects latest/family mismatch/VM prefix, accepts GPU Driver/None API | 0 |
+| Default network and automatic OS disk | PASS: `b5146138bf6142ff8f1ce4a60febd4a5`, node `aks-validation-4rht2`; no dedicated public IP, observed normal egress `57.166.252.66`, Azure disk auto-sized to 220 GB NVMe/NvmeDisk | 0 |
+| Legacy public IP compatibility | PASS: `c9c02122b36949929fc1b560e6355fa1`, node `aks-validation-h2j67`, allocated/observed IP `20.81.178.97`, automatic NVMe disk | 0 |
+| Each worker's Azure resources deleted | PASS: independent VM/NIC/disk/public-IP absence checks for all six nodes above | 0 |
+| Final pool and controller state | PASS: `9206e7ba241844b59030210dbd1425b8`; no claims, CPU limit 0, on-demand, original Gallery1.0.0 restored, temporary class removed | 0 |
+| Deployment safety mocks | PASS: adoption, existing release, in-cluster auth, wrong context, wrong CA, missing adoption permission, foreign release; no secret output | 0 |
+
+Independent Azure checks verified exact image IDs, NVMe controllers, NvmeDisk
+placement, NSG attachment, static Standard public IPs, matching observed egress,
+and absence of outbound-rule backend pool bindings on public-IP NICs. Default
+nodes had no public-IP resource or NIC attachment. Test version1.0.1 was deleted
+after restoration to1.0.0. The pool was paused before final deletion to prevent
+system demand from creating another worker.
+
+At the start of this run the old system VMSS had no instances and its Node was
+NotReady. Reallocating/expanding `Standard_D2s_v5` failed with SkuNotAvailable.
+Administration was restored in the same cluster with one `Standard_D4ds_v6`
+system pool `valmgmt`; the failed/empty old `sys` pool was deleted. The final
+retained system node is Ready and incurs the D4ds_v6 rate, not the previous
+D2s_v5 rate. Cluster, Gallery1.0.0, ACR and Standard LB costs continue; no test
+worker or builder remains. No unrelated Terraform cluster was modified.
+
+Failed attempts were not counted as passes: unavailable management capacity,
+Run Command's missing kubeconfig/cluster-info, an omitted script attachment,
+an expired/unavailable result lookup, a transient TLS error, and two incorrect
+manual Azure-check inputs. They were resolved and the scoped checks rerun.
+
+Verdict: **PASS for the listed aksscriptless/Ubuntu2404/CPU journeys**. Browser
+testing is inapplicable to this controller. The previous complete 41-suite local
+regression and strict verify cover the tested source tree; no production Go code
+changed in this deployment work. Live coverage does not certify GPU runtime,
+Machine API, FIPS/Trusted Launch/Kata, real Spot eviction, automatic disruption
+under every budget/PDB, or every partial Azure failure/GC recovery path. GPU API
+admission and local multi-mode tests are not substitutes for those live checks.
+
+Deployment: [two-input existing AKS Helm guide](helm-existing-aks.md).
+
 ## Scope
 
 This report covers removal of the fork-specific GPU skip behavior, fixed custom

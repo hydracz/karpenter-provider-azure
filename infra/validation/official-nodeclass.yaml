@@ -4,7 +4,8 @@ metadata:
   name: val-official
 spec:
   imageFamily: Ubuntu2404
-  enableNodePublicIP: true
+  nodePublicIP:
+    enabled: true
   osDiskSizeGB: 128
   tags:
     Purpose: karpenter-live-validation
