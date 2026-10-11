@@ -66,6 +66,7 @@ type AZClient struct {
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
 	GalleryImagesClient     imagefamilytypes.ComputeGalleryImagesAPI
+	PublicIPAddressesClient azapi.PublicIPAddressesAPI
 	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                          skewer.ResourceClient
@@ -194,6 +195,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	}
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+	publicIPAddressesClient, err := armnetwork.NewPublicIPAddressesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -377,5 +382,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		skuMixPlacementClient,
 	)
 	client.GalleryImagesClient = &computeGalleryImagesClient{credential: cred, options: opts}
+	client.PublicIPAddressesClient = publicIPAddressesClient
 	return client, nil
 }
