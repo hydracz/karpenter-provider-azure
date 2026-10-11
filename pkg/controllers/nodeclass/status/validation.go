@@ -58,6 +58,10 @@ const (
 	// ManagedGPUUnsupportedProvisionMode is the condition reason set when a NodeClass requests
 	// the managed GPU experience but the provision mode cannot express the NVIDIA GPU profile.
 	ManagedGPUUnsupportedProvisionMode = "ManagedGPUUnsupportedProvisionMode"
+	// NodePublicIPUnsupportedProvisionMode is the condition reason set when a NodeClass enables
+	// node public IP settings unsupported by the provision mode. Prefixes and IP tags require
+	// an AKS Machine API mode.
+	NodePublicIPUnsupportedProvisionMode = "NodePublicIPUnsupportedProvisionMode"
 	// WindowsUnsupportedNetworkDataplane is the condition reason set when a Windows NodeClass is
 	// configured on a cluster that uses an unsupported network dataplane.
 	WindowsUnsupportedNetworkDataplane = "WindowsUnsupportedNetworkDataplane"
@@ -114,6 +118,15 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 			v1beta1.ConditionTypeValidationSucceeded,
 			ManagedGPUUnsupportedProvisionMode,
 			fmt.Sprintf("gpu.nvidia.managementMode %q requires an AKS Machine API provision mode; provision-mode %q is not supported", nodeClass.GetManagementMode(), options.FromContext(ctx).ProvisionMode),
+		)
+		return reconcile.Result{}, nil
+	}
+	publicIPRequiresMachineAPI := len(nodeClass.GetNodePublicIPPrefixIDs()) > 0 || len(nodeClass.GetNodePublicIPTags()) > 0
+	if nodeClass.IsNodePublicIPEnabled() && (!options.FromContext(ctx).SupportsNodePublicIP() || (publicIPRequiresMachineAPI && !options.FromContext(ctx).IsAKSMachineAPIMode())) {
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeValidationSucceeded,
+			NodePublicIPUnsupportedProvisionMode,
+			fmt.Sprintf("nodePublicIP configuration is not supported with provision-mode %q; prefixIDs and ipTags require an AKS Machine API mode (%q or %q)", options.FromContext(ctx).ProvisionMode, consts.ProvisionModeAKSMachineAPI, consts.ProvisionModeAKSMachineAPIHeaderBatch),
 		)
 		return reconcile.Result{}, nil
 	}

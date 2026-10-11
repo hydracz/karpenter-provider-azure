@@ -423,6 +423,94 @@ var _ = Describe("Validation Reconciler", func() {
 		)
 	})
 
+	Context("node public IP provision mode validation", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.NodePublicIP = &v1beta1.NodePublicIP{Enabled: lo.ToPtr(true)}
+		})
+
+		DescribeTable("should reject public IP prefixes and tags in VM provision modes",
+			func(provisionMode string, usePrefix bool) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				if usePrefix {
+					nodeClass.Spec.NodePublicIP.PrefixIDs = []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}
+				} else {
+					nodeClass.Spec.NodePublicIP.IPTags = []v1beta1.IPTag{{IPTagType: "RoutingPreference", Tag: "Internet"}}
+				}
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+				Expect(condition.IsFalse()).To(BeTrue())
+				Expect(condition.Reason).To(Equal(status.NodePublicIPUnsupportedProvisionMode))
+				Expect(condition.Message).To(ContainSubstring(provisionMode))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPI))
+				Expect(condition.Message).To(ContainSubstring(consts.ProvisionModeAKSMachineAPIHeaderBatch))
+			},
+			Entry("prefix in aksscriptless", consts.ProvisionModeAKSScriptless, true),
+			Entry("prefix in bootstrappingclient", consts.ProvisionModeBootstrappingClient, true),
+			Entry("IP tags in aksscriptless", consts.ProvisionModeAKSScriptless, false),
+			Entry("IP tags in bootstrappingclient", consts.ProvisionModeBootstrappingClient, false),
+		)
+
+		DescribeTable("should accept node public IP in all supported provision modes",
+			func(provisionMode string, legacy bool) {
+				ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+				if legacy {
+					nodeClass.Spec.NodePublicIP = nil
+					nodeClass.Spec.EnableNodePublicIP = lo.ToPtr(true)
+				}
+
+				result, err := reconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+				Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless, false),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient, false),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI, false),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch, false),
+			Entry("legacy aksscriptless", consts.ProvisionModeAKSScriptless, true),
+			Entry("legacy bootstrappingclient", consts.ProvisionModeBootstrappingClient, true),
+			Entry("legacy aksmachineapi", consts.ProvisionModeAKSMachineAPI, true),
+			Entry("legacy aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch, true),
+		)
+
+		It("should clear the failure after node public IP is disabled", func() {
+			ctx = options.ToContext(ctx, &options.Options{ProvisionMode: consts.ProvisionModeAKSScriptless})
+			nodeClass.Spec.NodePublicIP.PrefixIDs = []string{"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/publicIPPrefixes/prefix"}
+			_, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsFalse()).To(BeTrue())
+
+			nodeClass.Spec.NodePublicIP.Enabled = lo.ToPtr(false)
+			nodeClass.Spec.NodePublicIP.PrefixIDs = nil
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+		})
+
+		DescribeTable("should not restrict configurations that do not enable node public IP",
+			func(provisionMode string) {
+				for _, nodePublicIP := range []*v1beta1.NodePublicIP{nil, {}, {Enabled: lo.ToPtr(false)}} {
+					ctx = options.ToContext(ctx, &options.Options{ProvisionMode: provisionMode})
+					nodeClass.Spec.NodePublicIP = nodePublicIP
+
+					result, err := reconciler.Reconcile(ctx, nodeClass)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
+					Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded).IsTrue()).To(BeTrue())
+				}
+			},
+			Entry("aksscriptless", consts.ProvisionModeAKSScriptless),
+			Entry("bootstrappingclient", consts.ProvisionModeBootstrappingClient),
+			Entry("aksmachineapi", consts.ProvisionModeAKSMachineAPI),
+			Entry("aksmachineapiheaderbatch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
+	})
+
 	Context("cluster-level FIPS validation", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{EnableFIPS: lo.ToPtr(true)}))

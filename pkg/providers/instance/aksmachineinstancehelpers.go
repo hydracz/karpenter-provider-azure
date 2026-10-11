@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
@@ -95,8 +96,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, err
 	}
 
-	// OSDiskType
-	osDiskType, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
+	// OSDiskSizeGB, OSDiskType
+	osDiskSizeGB, osDiskType, err := configureOSDisk(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +118,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// see batch_field_registry.go — ClearPerMachineFields must cover any new per-machine
 	// MachineProperties field so batch grouping and header extraction stay correct.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
+	// TODO: Resolve one effective kubelet configuration for scheduling, AKSScriptless, and
+	// AKSMachineAPI so omitted defaults cannot drift. This can be done when Node Hardening becomes GA.
+	kubeletConfig := configureKubeletConfig(nodeClass)
 
 	return &armcontainerservice.Machine{
 		// BATCH: Zones is a per-machine field (selected from instance type offerings).
@@ -125,14 +129,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		Zones: zones.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
 			NodeImageVersion: nodeImageVersionPtr,
-			Network: &armcontainerservice.MachineNetworkProperties{
-				VnetSubnetID:       nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
-				EnableNodePublicIP: nodeClass.Spec.EnableNodePublicIP,
-				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
-				// PodSubnetID:          "",
-				// NodePublicIPPrefixID: "",
-				// IPTags:               nil,
-			},
+			Network:          configureNetwork(nodeClass),
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
@@ -142,7 +139,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       configureOSType(nodeClass),
 				OSSKU:        osSku,
-				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
+				OSDiskSizeGB: osDiskSizeGB,
 				OSDiskType:   osDiskType,
 				EnableFIPS:   enableFIPS,
 				LinuxProfile: configureLinuxProfile(nodeClass),
@@ -156,7 +153,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeLabels:          nodeLabels,
 				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
 				// KubeletDiskType:          "",
-				KubeletConfig:            configureKubeletConfig(nodeClass),
+				KubeletConfig:            kubeletConfig,
 				NodeInitializationTaints: nodeInitializationTaints,
 				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
@@ -196,6 +193,28 @@ func configureAKSMachineBillingProfile(nodeClaim *karpv1.NodeClaim, capacityType
 		return nil, fmt.Errorf("invalid %q annotation on NodeClaim %q: price %v is outside the float32 range supported by the AKS Machine API", v1beta1.AnnotationSpotMaxPrice, nodeClaim.Name, *maxPrice)
 	}
 	return &armcontainerservice.MachineBillingProfile{SpotMaxPrice: lo.ToPtr(float32(*maxPrice))}, nil
+}
+
+func configureNetwork(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.MachineNetworkProperties {
+	network := &armcontainerservice.MachineNetworkProperties{
+		VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
+		// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
+		// PodSubnetID: nil,
+	}
+	// Leave the public IP fields nil when the feature is disabled, so the request and the batch
+	// key for existing NodeClasses don't change.
+	if nodeClass.IsNodePublicIPEnabled() {
+		network.EnableNodePublicIP = lo.ToPtr(true)
+		if prefixIDs := nodeClass.GetNodePublicIPPrefixIDs(); len(prefixIDs) > 0 {
+			network.NodePublicIPPrefixID = lo.ToPtr(prefixIDs[0])
+		}
+		if ipTags := nodeClass.GetNodePublicIPTags(); len(ipTags) > 0 {
+			network.NodePublicIPTags = lo.Map(ipTags, func(t v1beta1.IPTag, _ int) *armcontainerservice.IPTag {
+				return &armcontainerservice.IPTag{IPTagType: lo.ToPtr(t.IPTagType), Tag: lo.ToPtr(t.Tag)}
+			})
+		}
+	}
+	return network
 }
 
 func configureCapacityReservation(nodeClass *v1beta1.AKSNodeClass) *armcontainerservice.CapacityReservation {
@@ -323,16 +342,22 @@ func convertLocalDNSOverrides(overrides []v1beta1.LocalDNSZoneOverride) map[stri
 	return result
 }
 
-func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
-	// Karpenter defaults to Managed, but decides whether to use Ephemeral
-	sku, err := instanceTypeProvider.Get(ctx, instanceType.Name)
+// configureOSDisk resolves the OS disk size and type for the machine; the size is sent
+// explicitly (not left for the AKS machine API to default) so it matches the value Karpenter
+// uses for scheduling and the reported ephemeral-storage capacity in the VM path.
+func configureOSDisk(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*int32, *armcontainerservice.OSDiskType, error) {
+	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(
+		ctx,
+		instanceTypeProvider,
+		instanceType.Name,
+		nodeClass.Spec.OSDiskSizeGB,
+		lo.FromPtr(nodeClass.Spec.OSDiskType),
+		nodeClass.IsTrustedLaunchEnabled(),
+	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		return lo.ToPtr(armcontainerservice.OSDiskTypeEphemeral), nil
-	}
-	return lo.ToPtr(armcontainerservice.OSDiskTypeManaged), nil
+	return lo.ToPtr(osDiskProfile.SizeGB), lo.ToPtr(osDiskProfile.Type), nil
 }
 
 func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriority {
@@ -547,7 +572,67 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 
 	kubeletConfig.FailSwapOn = nodeClass.Spec.Kubelet.FailSwapOn
 
+	if nodeClass.Spec.Kubelet.KubeReserved != nil {
+		kubeletConfig.KubeReserved = configureAKSMachineKubeReserved(nodeClass.Spec.Kubelet.KubeReserved)
+	}
+	if nodeClass.Spec.Kubelet.EvictionHard != nil {
+		kubeletConfig.HardEvictionThreshold = configureAKSMachineHardEviction(nodeClass.Spec.Kubelet.EvictionHard)
+	}
+	if nodeClass.Spec.Kubelet.EvictionSoft != nil {
+		kubeletConfig.SoftEvictionThreshold = configureAKSMachineSoftEviction(nodeClass.Spec.Kubelet.EvictionSoft)
+	}
+	if nodeClass.Spec.Kubelet.EvictionSoftGracePeriod != nil {
+		kubeletConfig.SoftEvictionGracePeriod = configureAKSMachineSoftEvictionGracePeriod(nodeClass.Spec.Kubelet.EvictionSoftGracePeriod)
+	}
+	if nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod != nil {
+		kubeletConfig.EvictionMaxPodGracePeriodInSeconds = lo.ToPtr(*nodeClass.Spec.Kubelet.EvictionMaxPodGracePeriod)
+	}
+
 	return kubeletConfig
+}
+
+func configureAKSMachineKubeReserved(config *v1beta1.KubeReserved) *armcontainerservice.KubeReserved {
+	return &armcontainerservice.KubeReserved{
+		CPUMillicores: config.CPUMillicores,
+		MemoryMB:      config.MemoryMB,
+	}
+}
+
+func configureAKSMachineHardEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.HardEvictionThreshold {
+	return &armcontainerservice.HardEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
+	}
+}
+
+func configureAKSMachineSoftEviction(config *v1beta1.EvictionThreshold) *armcontainerservice.SoftEvictionThreshold {
+	return &armcontainerservice.SoftEvictionThreshold{
+		MemoryAvailable:  config.MemoryAvailable,
+		NodeFsAvailable:  config.NodeFsAvailable,
+		NodeFsInodesFree: config.NodeFsInodesFree,
+	}
+}
+
+func configureAKSMachineSoftEvictionGracePeriod(config *v1beta1.EvictionSoftGracePeriod) *armcontainerservice.SoftEvictionGracePeriod {
+	return &armcontainerservice.SoftEvictionGracePeriod{
+		MemoryAvailable:  durationString(config.MemoryAvailable),
+		NodeFsAvailable:  durationString(config.NodeFsAvailable),
+		NodeFsInodesFree: durationString(config.NodeFsInodesFree),
+	}
+}
+
+func durationString(value *karpv1.NillableDuration) *string {
+	if value == nil || value.Duration == nil {
+		return nil
+	}
+	if value.Raw != nil {
+		var raw string
+		if err := json.Unmarshal(value.Raw, &raw); err == nil {
+			return lo.ToPtr(raw)
+		}
+	}
+	return lo.ToPtr(value.String())
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer

@@ -603,7 +603,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 				DiskControllerType: opts.LaunchTemplate.DiskControllerType,
 				OSDisk: &armcompute.OSDisk{
 					Name:         lo.ToPtr(opts.VMName),
-					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
+					DiskSizeGB:   lo.ToPtr(opts.LaunchTemplate.StorageProfileSizeGB),
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
@@ -873,7 +873,7 @@ func resolveUltraSSDRequested(nodeClaim *karpv1.NodeClaim) bool {
 }
 
 func filterBackendPools(pools *loadbalancer.BackendAddressPools, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) *loadbalancer.BackendAddressPools {
-	if lo.FromPtr(nodeClass.Spec.EnableNodePublicIP) {
+	if nodeClass.IsNodePublicIPEnabled() {
 		pools = pools.WithoutOutboundPools()
 	}
 	// Azure CCM's updateNodeCaches adds nodes to its load balancer exclusion cache based on label
@@ -896,6 +896,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
+	if len(nodeClass.GetNodePublicIPPrefixIDs()) > 0 || len(nodeClass.GetNodePublicIPTags()) > 0 {
+		return nil, fmt.Errorf("nodePublicIP.prefixIDs and nodePublicIP.ipTags require an AKS Machine API provision mode")
+	}
 	selection := p.allocationStrategyProvider.Allocate(
 		ctx,
 		instanceTypes,
@@ -939,7 +942,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
 	}
 	var nsgID string
-	if !isAKSManagedVNET || lo.FromPtr(nodeClass.Spec.EnableNodePublicIP) {
+	if !isAKSManagedVNET || nodeClass.IsNodePublicIPEnabled() {
 		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("getting managed network security group: %w", err)
@@ -954,7 +957,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	nicOpts := &createNICOptions{
 		NICName:                resourceName,
 		Zone:                   zone,
-		EnableNodePublicIP:     lo.FromPtr(nodeClass.Spec.EnableNodePublicIP),
+		EnableNodePublicIP:     nodeClass.IsNodePublicIPEnabled(),
 		NetworkPlugin:          networkPlugin,
 		NetworkPluginMode:      networkPluginMode,
 		MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
