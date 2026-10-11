@@ -1,19 +1,29 @@
 # Node Public IPv4
 
-Set `AKSNodeClass.spec.enableNodePublicIP: true` to request one public IPv4 per node.
-Omitted and `false` preserve upstream behavior and the existing NodeClass hash.
-Changing the effective value changes the hash and applies to replacement nodes;
-it does not retrofit existing VMs in place.
+Set `AKSNodeClass.spec.nodePublicIP.enabled: true` to request one public IPv4 per
+node using the upstream API. Omitted, empty, and disabled blocks preserve the
+default behavior and hash. Changes apply to replacement nodes, not existing VMs
+in place.
 
 ```yaml
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
-  name: direct-egress
+   name: direct-egress
 spec:
-  imageFamily: Ubuntu2404
-  enableNodePublicIP: true
+   imageFamily: Ubuntu2404
+   nodePublicIP:
+      enabled: true
 ```
+
+Upgrade the controller and generated CRDs together before using the new block.
+The earlier `spec.enableNodePublicIP` field remains a deprecated compatibility
+fallback in all four modes. An explicit `nodePublicIP` block takes precedence,
+including `{}` and `{enabled: false}`; the legacy field is ignored in both the
+request and hash in that case. Migrating an enabled legacy field to the new block
+can change the NodeClass hash, so observe disruption budgets and replacement nodes.
+The retained validation cluster still runs the older `f03cdd78` image and uses
+legacy manifests; it was not silently upgraded by the repository merge.
 
 ## Mode Behavior
 
@@ -21,14 +31,29 @@ spec:
 | --- | --- |
 | `aksscriptless` | Create an owned Standard, Regional, static IPv4; attach it to the primary NIC IP configuration. |
 | `bootstrappingclient` | Same VM/NIC lifecycle as scriptless. |
-| `aksmachineapi` | Send the native `network.enableNodePublicIP` field; AKS owns creation and deletion. |
-| `aksmachineapiheaderbatch` | Same native field, included in the shared Machine template and batch grouping. |
+| `aksmachineapi` | Use upstream enablement, optional prefix/IP tags, and drift validation; AKS owns creation and deletion. |
+| `aksmachineapiheaderbatch` | Same upstream network profile, included in the shared Machine template and batch grouping. |
 
 VM public IP zones follow the selected node zone. The provider requires the
 existing cluster NSG before attachment and does not open SSH, kubelet, NodePort,
 or other Internet-facing inbound rules. Review subnet and NIC NSGs: public IPs
 increase the impact of overly permissive rules. This feature is IPv4-only and
-does not accept an existing IP ID, IP prefix, custom DNS name, or routing tag.
+does not accept an existing public IP ID or custom DNS name. VM modes reject
+`nodePublicIP.prefixIDs` and `nodePublicIP.ipTags` before creating resources;
+these upstream options are supported only by the two Machine API modes.
+
+For a Machine API NodeClass, an optional public IP prefix and routing preference
+can be expressed through the upstream configuration:
+
+```yaml
+spec:
+  nodePublicIP:
+    enabled: true
+    prefixIDs:
+      - /subscriptions/<subscription-id>/resourceGroups/<network-rg>/providers/Microsoft.Network/publicIPPrefixes/<prefix>
+    ipTags:
+      - {ipTagType: RoutingPreference, tag: Internet}
+```
 
 The controller identity requires Network Contributor or equivalent narrowly scoped
 public-IP/NIC permissions on the node resource group. Public IP quotas also limit
@@ -92,7 +117,7 @@ its own egress verification.
 
 Also inspect the subnet's NAT Gateway and route table and the node resource
 group's load balancers. The expected evidence is the actual source IP plus the
-resource topology, not merely `enableNodePublicIP: true` in YAML.
+resource topology, not merely `nodePublicIP.enabled: true` in YAML.
 
 ## Cleanup and Failure Handling
 

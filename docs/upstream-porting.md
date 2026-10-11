@@ -2,22 +2,39 @@
 
 ## Baseline
 
-Assessment date: 2026-10-10.
+Initial assessment: 2026-10-10. Latest upstream synchronization: 2026-10-11.
 
-- Upstream: `Azure/karpenter-provider-azure`, `main` at
-  `8389c7e91b7dbb42efa175fd1fbcf3a398ca396c`, fetched from GitHub for this port.
-- Source fork: `hydracz/karpenter-provider-azure`, `main` at
+- Push destination (`origin`): `https://github.com/hydracz/karpenter-provider-azure.git`.
+- Upstream source (`upstream`): `https://github.com/Azure/karpenter-provider-azure.git`,
+  `main` at `4d56249a17e2a99f63bf97fc77229e4e2bef12d0`, fetched for this merge.
+- Initial port baseline: `8389c7e91b7dbb42efa175fd1fbcf3a398ca396c`.
+- Legacy fork source: `hydracz/karpenter-provider-azure`, `main` at
   `3f8b8bd9156e5e44c3803d8ca972b1d54e88c4f8` (`v20260323-dev`).
 - Common ancestor: `9a1c4bf24693a38e9b251b05c308f44cb05e32ff`.
 - The 11 fork-only commits were assessed by feature rather than replayed blindly.
-  The original fork working tree and branch were left unchanged. New commits are
-  on the upstream checkout's existing `main`; nothing was pushed to either remote.
+  `50464fd0` preserves their ancestry without restoring superseded implementations.
+  The original feature commits remain intact. `0d4abfc8` merges the latest Azure
+  upstream into the maintained fork checkout; both remote main branches are ancestors,
+  so updating the personal fork does not require a force push.
 
-During live validation, a later fetch on 2026-10-11 advanced `origin/main` to
-`6c7e6ba8`, five commits beyond this pinned baseline. Those OS-disk, Node Hardening,
-and development-container updates are not included in this port or its validation
-claims. The deployed controller remains the tested `f03cdd78` build; rebasing onto
-the newer upstream tip requires a separate regression and deployment validation.
+The maintained working directory is `karpenter-provider-azure/`; its default push
+remote is now the personal fork. The separate `karpenter-provider-azure-new/`
+checkout remains an unchanged legacy reference. Nothing has been pushed by this
+workflow. From the maintained checkout, future synchronization uses:
+
+```bash
+git fetch upstream
+git merge upstream/main
+```
+
+After resolving conflicts and running the repository checks, publish only to the
+personal fork with `git push origin main`, never to `upstream` and never with force.
+
+The six upstream commits after the initial baseline include OS-disk sizing,
+Trusted Launch capacity, the storage refactor, Node Hardening, development-container
+updates, and native Machine public IP support. They are now included. The retained
+cluster still runs `f03cdd78`; historical live evidence below does not certify the
+new merge build, which has separate local regression evidence in the validation report.
 
 ## Feature Decisions
 
@@ -28,13 +45,13 @@ the newer upstream tip requires a separate regression and deployment validation.
 | GPU Operator / BYO driver toggle | Use upstream `spec.gpu.mode` | [#1539](https://github.com/Azure/karpenter-provider-azure/pull/1539) supplies `Driver`/`None` and mode-aware filtering/bootstrap. Keep upstream APIs, CRDs, defaults, and hash logic. |
 | Managed NVIDIA components | Use upstream | [#1752](https://github.com/Azure/karpenter-provider-azure/pull/1752) exposes NVIDIA management mode. It is distinct from disabling driver installation. |
 | CIG eligibility for NVMe-only SKUs | Use upstream | [#1642](https://github.com/Azure/karpenter-provider-azure/pull/1642) removes the old CIG block. Do not reinstate the fork's obsolete compatibility predicate. |
-| Ephemeral OS disk eligibility, capacity, placement | Use upstream | [#1870](https://github.com/Azure/karpenter-provider-azure/pull/1870) is retained without behavioral changes. NVMe temporary-disk placement is not the same as the VM OS disk controller. |
+| Ephemeral OS disk eligibility, capacity, placement | Use upstream | Retain [#1870](https://github.com/Azure/karpenter-provider-azure/pull/1870), Trusted Launch reserve [#1869](https://github.com/Azure/karpenter-provider-azure/pull/1869), automatic sizing [#1973](https://github.com/Azure/karpenter-provider-azure/pull/1973), and shared OS disk profiles [#1977](https://github.com/Azure/karpenter-provider-azure/pull/1977). NVMe temporary-disk placement is not the VM OS disk controller. |
 | Explicit NVMe controller in VM create requests | Retain and adapt | Current upstream VM requests do not set the controller. Carry `DiskControllerType=NVMe` from SKU capabilities through the existing storage lookup and launch template, only for NVMe-only SKUs. Exact token matching avoids treating `NVMeV2` as `NVMe`. |
 | Scriptless AgentBaker skip-driver tag | Drop | Do not maintain a fork-specific automatic tag. Use the upstream GPU policy below; resource tags remain explicit user configuration. |
 | Spot maximum price annotation | Retain and adapt | Keep `karpenter.azure.com/spot-max-price` on NodeClaims. Current Machine SDK supports `Billing.SpotMaxPrice`, so replace the fork's obsolete Machine API rejection with native support in both Machine modes. Preserve defaults and on-demand behavior. |
 | Existing-cluster Workload Identity helper | Retain and harden | Keep the standalone existing-cluster workflow. Pin subscription/context, reject conflicting federated credentials, propagate read failures, and scope roles to the node resource group. |
 | Custom Compute Gallery image | Add | `spec.imageID` accepts a fixed generalized Linux Gallery version for the two VM modes. Metadata determines architecture and generation; configuration/permission errors clear stale image readiness. |
-| Node public IPv4 | Add | Opt-in `spec.enableNodePublicIP`; VM modes manage an owned Standard IP and cleanup, Machine modes use the native network field. Default behavior and hashes remain unchanged. |
+| Node public IPv4 | Upstream API plus VM extension | Use [#1982](https://github.com/Azure/karpenter-provider-azure/pull/1982) `spec.nodePublicIP` and native Machine request/drift/batch logic. VM modes retain owned Standard IPv4 lifecycle and outbound-pool filtering. Prefixes/IP tags remain Machine-only. The previous `spec.enableNodePublicIP` is a deprecated compatibility fallback; an explicit new block takes precedence. |
 | Build/deployment guide and local build ignores | Retain and update | Use current values-generator arguments, existing ServiceAccount ownership, and immutable image digests. Ignore root `bin/`, `dist/`, and `controller` artifacts. |
 | Historical GPU/image analysis documents | Supersede | Their preview SKU names, old GPU API, driver versions, and unsupported-mode statements are no longer reliable operational guidance. This assessment and the updated deployment guide replace them; originals remain in the source fork. |
 
@@ -56,7 +73,8 @@ Follow-up extension commits:
 The assessment itself is a separate documentation commit. The original port did
 not change generated CRDs or dependencies. The custom-image/public-IP extension
 adds its two fields to the v1beta1 CRD through the repository generator; dependency
-versions and the unserved v1alpha2 API remain unchanged.
+versions remain identical to the synchronized upstream. v1alpha2 includes only
+upstream changes, with no fork-specific API additions.
 
 ## Source Commit Accounting
 
@@ -164,7 +182,8 @@ metadata:
   name: cig-public
 spec:
   imageFamily: Ubuntu2404
-  enableNodePublicIP: true
+  nodePublicIP:
+    enabled: true
   osDiskSizeGB: 128
 ```
 
@@ -178,7 +197,8 @@ metadata:
 spec:
   imageFamily: Ubuntu2404
   imageID: /subscriptions/<subscription-id>/resourceGroups/<image-rg>/providers/Microsoft.Compute/galleries/<gallery>/images/<definition>/versions/1.0.0
-  enableNodePublicIP: true
+  nodePublicIP:
+    enabled: true
   osDiskSizeGB: 128
 ```
 
@@ -226,7 +246,7 @@ the on-demand run. For the official-image run, change the NodeClass reference to
 
 - [Custom image build, generalization, and publication](custom-images.md)
 - [Public IP behavior, cost, topology, and cleanup](node-public-ip.md)
-- [Current validation report and authentication blocker](runtime-validation-report.md)
+- [Local and live validation evidence](runtime-validation-report.md)
 
 ## Testing Strategy
 

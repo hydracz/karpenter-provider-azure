@@ -7,6 +7,25 @@ Compute Gallery images, opt-in node public IPv4, and regression of the retained
 Spot/NVMe behavior. The previous 42-suite baseline is recorded separately in
 [the port assessment](upstream-porting.md).
 
+## Personal Fork Upstream Merge
+
+On 2026-10-11, the maintained checkout was corrected to use the personal fork
+`hydracz/karpenter-provider-azure` as `origin` and default push destination, with
+`Azure/karpenter-provider-azure` as `upstream`. Merge `0d4abfc8` incorporates
+upstream `4d56249a17e2a99f63bf97fc77229e4e2bef12d0`; `50464fd0` retains legacy
+fork ancestry without restoring features intentionally replaced or removed.
+No force push is needed, and no remote push was performed.
+
+Focused hash, four-mode public IP, VM prefix/tag rejection, storage, NVMe,
+custom-image and kubelet regressions passed. Strict `CI=true` native `verify`
+also passed with zero lint issues and no generated drift. The upstream dependency
+files, v1alpha2 implementation, GPU tags, and OS disk profile algorithm remain
+unchanged from the new upstream baseline.
+
+The cloud journeys below ran the earlier `f03cdd78` controller. The new merge was
+not deployed to the retained cluster; do not interpret historical live successes
+as cloud certification of the new build or of upstream prefix/IP-tag options.
+
 ## Local Evidence
 
 | Check | Result | Exit code |
