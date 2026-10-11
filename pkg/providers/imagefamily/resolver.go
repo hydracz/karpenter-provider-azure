@@ -164,17 +164,16 @@ func (r *defaultResolver) Resolve(
 	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
 	allTaints := slices.Concat(generalTaints, startupTaints)
 
-	osDiskProfile, err := instancetype.ResolveOSDiskProfileFromInstanceType(
-		ctx,
-		r.instanceTypeProvider,
-		instanceType.Name,
+	sku, err := r.instanceTypeProvider.Get(ctx, instanceType.Name)
+	if err != nil {
+		return nil, err
+	}
+	osDiskProfile := instancetype.ResolveOSDiskProfileFromSKU(
+		sku,
 		nodeClass.Spec.OSDiskSizeGB,
 		lo.FromPtr(nodeClass.Spec.OSDiskType),
 		nodeClass.IsTrustedLaunchEnabled(),
 	)
-	if err != nil {
-		return nil, err
-	}
 	diskType := lo.Ternary(osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral, consts.StorageProfileEphemeral, consts.StorageProfileManagedDisks)
 	var vtpmEnabled, secureBootEnabled *bool
 	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.TrustedLaunch != nil {
@@ -214,6 +213,7 @@ func (r *defaultResolver) Resolve(
 		StorageProfileIsEphemeral: osDiskProfile.Type == armcontainerservice.OSDiskTypeEphemeral,
 		StorageProfilePlacement:   lo.FromPtr(osDiskProfile.Placement),
 		StorageProfileSizeGB:      osDiskProfile.SizeGB,
+		DiskControllerType:        instancetype.GetDiskControllerType(sku),
 		ImageID:                   imageID,
 		EnableFIPS1403Encryption:  requiresFIPS1403Encryption(imageDistro),
 		IsWindows:                 false, // TODO(Windows)
