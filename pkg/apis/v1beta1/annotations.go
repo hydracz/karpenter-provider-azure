@@ -20,6 +20,7 @@ package v1beta1
 var (
 	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
 	AnnotationAKSMachineVMState = Group + "/aks-machine-vm-state"
+	AnnotationSpotMaxPrice      = Group + "/spot-max-price"
 
 	// AnnotationCapacityReservationGroupID records the group the NodeClass specified when
 	// this NodeClaim launched.
