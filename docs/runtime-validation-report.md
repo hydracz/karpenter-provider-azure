@@ -22,6 +22,17 @@ also passed with zero lint issues and no generated drift. The upstream dependenc
 files, v1alpha2 implementation, GPU tags, and OS disk profile algorithm remain
 unchanged from the new upstream baseline.
 
+The final canonical `make test` passed all 41 suites in 19m33.809s, with composite
+coverage of 72.5%. An earlier run inherited live-deployment environment variables
+and failed authentication configuration tests. The successful rerun isolated the
+test process environment; no authentication source changes were needed. With the
+Go tools and envtest assets configured, the clean invocation was:
+
+```bash
+env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
+  KUBEBUILDER_ASSETS="$KUBEBUILDER_ASSETS" make test
+```
+
 The cloud journeys below ran the earlier `f03cdd78` controller. The new merge was
 not deployed to the retained cluster; do not interpret historical live successes
 as cloud certification of the new build or of upstream prefix/IP-tag options.
@@ -46,6 +57,7 @@ as cloud certification of the new build or of upstream prefix/IP-tag options.
 | Canonical `make test` for this extension | PASS: 41 suites in 18m28s; composite coverage 71.5% | 0 |
 | Final Gallery-region validation refinement | PASS: whole imagefamily package and scoped lint after the full run | 0 |
 | Live-discovered LB/public-IP fix `f03cdd78` | PASS: complete loadbalancer, instance, garbagecollection, cloudprovider packages and scoped lint | 0 |
+| Canonical `make test` after upstream merge `0d4abfc8` | PASS: 41 suites in 19m33.809s; composite coverage 72.5% | 0 |
 
 Local tests use envtest Kubernetes 1.37 and fake Azure clients. The SDK lifecycle
 unit test uses a local HTTP policy, not Azure resources. These tests do not prove
