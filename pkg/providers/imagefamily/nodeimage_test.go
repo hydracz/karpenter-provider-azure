@@ -19,9 +19,11 @@ package imagefamily_test
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -117,6 +119,72 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+	})
+
+	Context("Custom Compute Gallery images", func() {
+		var galleryAPI *fake.ComputeGalleryImagesAPI
+		BeforeEach(func() {
+			galleryAPI = fake.NewComputeGalleryImagesAPI()
+			testOptions.ProvisionMode = consts.ProvisionModeAKSScriptless
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeClass.Spec.ImageID = lo.ToPtr("/subscriptions/" + customerSubscription + "/resourceGroups/images/providers/Microsoft.Compute/galleries/custom/images/ubuntu/versions/1.0.0")
+			nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, &fake.NodeImageVersionsAPI{}, cache.New(time.Hour, time.Minute), galleryAPI)
+		})
+		It("should resolve the fixed custom ID and cache its metadata", func() {
+			images, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(images).To(HaveLen(1))
+			Expect(images[0].ID).To(Equal(*nodeClass.Spec.ImageID))
+			Expect(images[0].Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(Equal([]string{v1beta1.HyperVGenerationV2}))
+			_, err = nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(galleryAPI.Calls.Len()).To(Equal(1))
+		})
+		It("should propagate gallery read errors", func() {
+			galleryAPI.Error = fmt.Errorf("gallery access denied")
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError("gallery access denied"))
+		})
+		It("should reject specialized images", func() {
+			galleryAPI.Image.Properties.OSState = lo.ToPtr(armcompute.OperatingSystemStateTypesSpecialized)
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError(ContainSubstring("generalized Linux")))
+		})
+		It("should reject versions not available in the node region", func() {
+			galleryAPI.Version.Location = lo.ToPtr("other-region")
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError(ContainSubstring("not published in region")))
+		})
+		It("should reject an unfinished image version", func() {
+			galleryAPI.Version.Properties.ProvisioningState = lo.ToPtr(armcompute.GalleryProvisioningStateCreating)
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError(ContainSubstring("not successfully provisioned")))
+		})
+		It("should not confuse the image resource location with its replication targets", func() {
+			galleryAPI.Version.Properties.PublishingProfile = &armcompute.GalleryImageVersionPublishingProfile{
+				TargetRegions: []*armcompute.TargetRegion{{Name: lo.ToPtr("other-region")}},
+			}
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError(ContainSubstring("not published in region")))
+		})
+		It("should accept Azure display names for the published region", func() {
+			galleryAPI.Version.Location = lo.ToPtr("other-region")
+			galleryAPI.Version.Properties.PublishingProfile = &armcompute.GalleryImageVersionPublishingProfile{
+				TargetRegions: []*armcompute.TargetRegion{{Name: lo.ToPtr("South Central US")}},
+			}
+			images, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(images).To(HaveLen(1))
+		})
+		DescribeTable("should reject custom images before querying Azure in Machine API modes", func(mode string) {
+			testOptions.ProvisionMode = mode
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(MatchError(ContainSubstring("not supported in provision mode")))
+			Expect(galleryAPI.Calls.Len()).To(BeZero())
+		},
+			Entry("single create", consts.ProvisionModeAKSMachineAPI),
+			Entry("header batch", consts.ProvisionModeAKSMachineAPIHeaderBatch),
+		)
 	})
 
 	Context("List CIG Images", func() {

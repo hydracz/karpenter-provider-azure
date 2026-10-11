@@ -57,17 +57,19 @@ type provider struct {
 
 	imageVersionsClient types.CommunityGalleryImageVersionsAPI
 	nodeImageVersions   types.NodeImageVersionsAPI
+	galleryImages       types.ComputeGalleryImagesAPI
 
 	nodeImagesCache *cache.Cache
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache, galleryClients ...types.ComputeGalleryImagesAPI) *provider {
 	return &provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
 		nodeImageVersions:   nodeImageVersionsClient,
+		galleryImages:       lo.FirstOrEmpty(galleryClients),
 		nodeImagesCache:     nodeImagesCache,
 		cm:                  pretty.NewChangeMonitor(),
 	}
@@ -75,6 +77,13 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	if nodeClass.Spec.ImageID != nil {
+		return p.listCustomImage(ctx, nodeClass)
+	}
+	return p.listDefaultImages(ctx, nodeClass)
+}
+
+func (p *provider) listDefaultImages(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 

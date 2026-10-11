@@ -1536,6 +1536,13 @@ spec:
                 - Windows2025
                 - AzureContainerLinux
                 type: string
+              imageID:
+                description: |-
+                  imageID selects a fixed, generalized Linux Azure Compute Gallery image version.
+                  The image must be derived from an AKS image matching imageFamily and the node Kubernetes version.
+                  Supported only in aksscriptless and bootstrappingclient modes. The controller identity needs Gallery read access.
+                pattern: (?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Compute/galleries/[^/]+/images/[^/]+/versions/[0-9]+\.[0-9]+\.[0-9]+$
+                type: string
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -2540,6 +2547,12 @@ spec:
                 ? (!has(self.security) || !has(self.security.trustedLaunch) || !((has(self.security.trustedLaunch.vtpm)
                 && self.security.trustedLaunch.vtpm) || (has(self.security.trustedLaunch.secureBoot)
                 && self.security.trustedLaunch.secureBoot))) : true'
+            - message: imageID requires an explicit Ubuntu2204, Ubuntu2404, or AzureLinux
+                imageFamily
+              rule: '!has(self.imageID) || (has(self.imageFamily) && self.imageFamily
+                in [''Ubuntu2204'',''Ubuntu2404'',''AzureLinux''])'
+            - message: imageID cannot be combined with versions.nodeImageVersion
+              rule: '!has(self.imageID) || !has(self.versions) || !has(self.versions.nodeImageVersion)'
           status:
             description: status contains the resolved state of the AKSNodeClass.
             properties:
