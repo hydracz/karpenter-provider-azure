@@ -170,6 +170,10 @@ done
 
 ### Configure Helm chart values
 
+For YAML-only bootstrap token creation without `kubeadm`, dedicated CSR permissions,
+and a stable Helm `secretKeyRef` instead of inline credentials, see
+[Manual bootstrap token setup](docs/bootstrap-token.md).
+
 The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template. Although the script automatically fetches the template from the main branch, inconsistencies may arise between the installed version of Karpenter and the repository code. Therefore, it is advisable to download the specific version of the template before running the script.
 
 ```bash
