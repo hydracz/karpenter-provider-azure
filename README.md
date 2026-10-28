@@ -88,6 +88,9 @@ Follow the instructions in the Node Auto Provisioning [documentation](https://le
 
 This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
 
+For an existing cluster, see the [Chinese manual Helm installation guide](docs/helm-install-zh.md),
+including manually managed bootstrap tokens and a node provisioning check.
+
 ### Install utilities
 
 Install these tools before proceeding:
